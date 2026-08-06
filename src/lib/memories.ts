@@ -1,52 +1,81 @@
-import { promises as fs } from "fs";
-import path from "path";
+import { getDb } from "@/lib/db";
 
 export type Memory = {
   id: string;
   content: string;
+  containerTag: string;
   createdAt: string;
 };
 
-const DATA_FILE = path.join(process.cwd(), "data", "memories.json");
+type MemoryRow = {
+  id: string;
+  content: string;
+  container_tag: string;
+  created_at: string;
+  embedding: string | null;
+};
 
-async function readMemories(): Promise<Memory[]> {
-  try {
-    const raw = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(raw) as Memory[];
-  } catch {
-    return [];
-  }
+function rowToMemory(row: MemoryRow): Memory {
+  return {
+    id: row.id,
+    content: row.content,
+    containerTag: row.container_tag,
+    createdAt: row.created_at,
+  };
 }
 
-async function writeMemories(memories: Memory[]): Promise<void> {
-  await fs.writeFile(DATA_FILE, JSON.stringify(memories, null, 2), "utf-8");
+export async function listMemories(containerTag = "default"): Promise<Memory[]> {
+  const db = getDb();
+  const rows = db
+    .query(
+      `SELECT id, content, container_tag, created_at, embedding
+       FROM memories
+       WHERE container_tag = ?
+       ORDER BY created_at DESC`
+    )
+    .all(containerTag) as MemoryRow[];
+
+  return rows.map(rowToMemory);
 }
 
-export async function listMemories(): Promise<Memory[]> {
-  const memories = await readMemories();
-  return memories.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-}
-
-export async function addMemory(content: string): Promise<Memory> {
-  const memories = await readMemories();
-
-  const memory: Memory = {
+export async function addMemory(
+  content: string,
+  containerTag = "default"
+): Promise<Memory> {
+  const db = getDb();
+  const memory = {
     id: crypto.randomUUID(),
     content: content.trim(),
+    containerTag: containerTag.trim() || "default",
     createdAt: new Date().toISOString(),
   };
 
-  memories.push(memory);
-  await writeMemories(memories);
+  db.run(
+    `INSERT INTO memories (id, content, container_tag, created_at, embedding)
+     VALUES (?, ?, ?, ?, NULL)`,
+    [memory.id, memory.content, memory.containerTag, memory.createdAt]
+  );
+
   return memory;
 }
 
-export async function searchMemories(query: string): Promise<Memory[]> {
+export async function searchMemories(
+  query: string,
+  containerTag = "default"
+): Promise<Memory[]> {
   const q = query.trim().toLowerCase();
   if (!q) return [];
 
-  const memories = await readMemories();
-  return memories.filter((m) => m.content.toLowerCase().includes(q));
+  const db = getDb();
+  const rows = db
+    .query(
+      `SELECT id, content, container_tag, created_at, embedding
+       FROM memories
+       WHERE container_tag = ?
+         AND lower(content) LIKE ?
+       ORDER BY created_at DESC`
+    )
+    .all(containerTag, `%${q}%`) as MemoryRow[];
+
+  return rows.map(rowToMemory);
 }
