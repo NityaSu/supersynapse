@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Supersynapse",
-  description: "Add and search memories by space",
+  description: "Save, search, and ask over memories by space",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
