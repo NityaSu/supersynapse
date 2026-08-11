@@ -98,24 +98,36 @@ async function keywordSearch(
   return rows.map((row) => rowToMemory(row));
 }
 
-/** Fill embeddings for older rows that were saved before the API key existed. */
+/** Fill embeddings for rows missing vectors (or wrong dimension after model switch). */
 export async function backfillMissingEmbeddings(
-  containerTag = "default"
+  containerTag = "default",
+  expectedDim?: number
 ): Promise<number> {
-  if (!process.env.OPENAI_API_KEY) return 0;
-
   const db = getDb();
   const rows = db
     .query(
       `SELECT id, content, container_tag, created_at, embedding
        FROM memories
-       WHERE container_tag = ?
-         AND (embedding IS NULL OR embedding = '')`
+       WHERE container_tag = ?`
     )
     .all(containerTag) as MemoryRow[];
 
   let updated = 0;
   for (const row of rows) {
+    let needsEmbed = !row.embedding;
+    if (!needsEmbed && expectedDim !== undefined && row.embedding) {
+      try {
+        const existing = JSON.parse(row.embedding) as number[];
+        needsEmbed = existing.length !== expectedDim;
+      } catch {
+        needsEmbed = true;
+      }
+    } else if (!needsEmbed) {
+      continue;
+    }
+
+    if (!needsEmbed) continue;
+
     const vector = await embed(row.content);
     if (!vector) continue;
     db.run(`UPDATE memories SET embedding = ? WHERE id = ?`, [
@@ -137,7 +149,7 @@ export async function searchMemories(
 
   const queryVector = await embed(q);
 
-  // No API key / embed failed → Day 1 style keyword search
+  // Ollama down / embed model missing → Day 1 style keyword search
   if (!queryVector) {
     return {
       results: await keywordSearch(q, containerTag),
@@ -145,7 +157,7 @@ export async function searchMemories(
     };
   }
 
-  await backfillMissingEmbeddings(containerTag);
+  await backfillMissingEmbeddings(containerTag, queryVector.length);
 
   const db = getDb();
   const rows = db
@@ -161,6 +173,7 @@ export async function searchMemories(
       if (!row.embedding) return null;
       try {
         const memoryVector = JSON.parse(row.embedding) as number[];
+        if (memoryVector.length !== queryVector.length) return null;
         const score = cosineSimilarity(queryVector, memoryVector);
         return rowToMemory(row, score);
       } catch {
