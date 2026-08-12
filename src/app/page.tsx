@@ -40,6 +40,9 @@ export default function Home() {
   const [asked, setAsked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   async function loadMemories(space: string) {
     const res = await fetch(
@@ -58,6 +61,8 @@ export default function Home() {
     setCitations([]);
     setAsked(false);
     setAskMode(null);
+    setEditingId(null);
+    setEditContent("");
   }, [containerTag]);
 
   async function handleAdd(e: React.FormEvent) {
@@ -105,6 +110,56 @@ export default function Home() {
     setCitations(data.citations ?? []);
     setAskMode(data.mode ?? null);
     setAsking(false);
+  }
+
+  function startEdit(m: Memory) {
+    setEditingId(m.id);
+    setEditContent(m.content);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditContent("");
+  }
+
+  async function handleSaveEdit(id: string) {
+    if (!editContent.trim()) return;
+
+    setSavingId(id);
+    const res = await fetch(`/api/memories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: editContent }),
+    });
+
+    if (res.ok) {
+      setEditingId(null);
+      setEditContent("");
+      await loadMemories(containerTag);
+      // Clear stale search/ask views that may cite old text
+      setResults([]);
+      setSearched(false);
+      setSearchMode(null);
+      setAnswer(null);
+      setCitations([]);
+      setAsked(false);
+      setAskMode(null);
+    }
+    setSavingId(null);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this memory?")) return;
+
+    setSavingId(id);
+    const res = await fetch(`/api/memories/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      if (editingId === id) cancelEdit();
+      await loadMemories(containerTag);
+      setResults((prev) => prev.filter((m) => m.id !== id));
+      setCitations((prev) => prev.filter((m) => m.id !== id));
+    }
+    setSavingId(null);
   }
 
   return (
@@ -285,10 +340,60 @@ export default function Home() {
           <ul className="divide-y divide-zinc-200 border-t border-zinc-200">
             {memories.map((m) => (
               <li key={m.id} className="py-4">
-                <p className="text-zinc-900">{m.content}</p>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {m.containerTag} · {formatDate(m.createdAt)}
-                </p>
+                {editingId === m.id ? (
+                  <div className="flex flex-col gap-3">
+                    <textarea
+                      className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900"
+                      rows={3}
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      disabled={savingId === m.id}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(m.id)}
+                        disabled={savingId === m.id || !editContent.trim()}
+                        className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                      >
+                        {savingId === m.id ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        disabled={savingId === m.id}
+                        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-900 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-zinc-900">{m.content}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      <p className="text-sm text-zinc-500">
+                        {m.containerTag} · {formatDate(m.createdAt)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(m)}
+                        disabled={savingId === m.id}
+                        className="text-sm text-zinc-600 underline-offset-2 hover:underline disabled:opacity-50"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m.id)}
+                        disabled={savingId === m.id}
+                        className="text-sm text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
+                      >
+                        {savingId === m.id ? "…" : "Delete"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </li>
             ))}
           </ul>
