@@ -58,7 +58,7 @@ export async function addMemory(
     createdAt: new Date().toISOString(),
   };
 
-  // Try to store a vector for later semantic search (null if no API key)
+  // Store a vector for semantic search (null if Ollama is down)
   const vector = await embed(memory.content);
   const embeddingJson = vector ? JSON.stringify(vector) : null;
 
@@ -75,6 +75,73 @@ export async function addMemory(
   );
 
   return memory;
+}
+
+export async function getMemory(id: string): Promise<Memory | null> {
+  const db = getDb();
+  const row = db
+    .query(
+      `SELECT id, content, container_tag, created_at, embedding
+       FROM memories
+       WHERE id = ?`
+    )
+    .get(id) as MemoryRow | null;
+
+  return row ? rowToMemory(row) : null;
+}
+
+export async function updateMemory(
+  id: string,
+  updates: { content?: string; containerTag?: string }
+): Promise<Memory | null> {
+  const existing = await getMemory(id);
+  if (!existing) return null;
+
+  const content =
+    typeof updates.content === "string"
+      ? updates.content.trim()
+      : existing.content;
+  const containerTag =
+    typeof updates.containerTag === "string"
+      ? updates.containerTag.trim() || "default"
+      : existing.containerTag;
+
+  if (!content) return null;
+
+  const contentChanged = content !== existing.content;
+  let embeddingJson: string | null = null;
+
+  if (contentChanged) {
+    const vector = await embed(content);
+    embeddingJson = vector ? JSON.stringify(vector) : null;
+
+    const db = getDb();
+    db.run(
+      `UPDATE memories
+       SET content = ?, container_tag = ?, embedding = ?
+       WHERE id = ?`,
+      [content, containerTag, embeddingJson, id]
+    );
+  } else {
+    const db = getDb();
+    db.run(`UPDATE memories SET container_tag = ? WHERE id = ?`, [
+      containerTag,
+      id,
+    ]);
+  }
+
+  return {
+    id,
+    content,
+    containerTag,
+    createdAt: existing.createdAt,
+  };
+}
+
+export async function deleteMemory(id: string): Promise<boolean> {
+  const db = getDb();
+  const result = db.run(`DELETE FROM memories WHERE id = ?`, [id]);
+  return result.changes > 0;
 }
 
 async function keywordSearch(
