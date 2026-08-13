@@ -10,7 +10,11 @@ type Memory = {
   score?: number;
 };
 
-const SPACES = ["default", "work", "personal"] as const;
+type Space = {
+  name: string;
+  createdAt: string;
+  memoryCount: number;
+};
 
 function formatDate(iso: string) {
   try {
@@ -24,7 +28,11 @@ function formatDate(iso: string) {
 }
 
 export default function Home() {
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [containerTag, setContainerTag] = useState<string>("default");
+  const [newSpaceName, setNewSpaceName] = useState("");
+  const [spaceBusy, setSpaceBusy] = useState(false);
+  const [spaceError, setSpaceError] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [query, setQuery] = useState("");
   const [question, setQuestion] = useState("");
@@ -44,6 +52,14 @@ export default function Home() {
   const [editContent, setEditContent] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  async function loadSpaces() {
+    const res = await fetch("/api/spaces");
+    const data = await res.json();
+    const next = (data.spaces ?? []) as Space[];
+    setSpaces(next);
+    return next;
+  }
+
   async function loadMemories(space: string) {
     const res = await fetch(
       `/api/memories?containerTag=${encodeURIComponent(space)}`
@@ -51,6 +67,14 @@ export default function Home() {
     const data = await res.json();
     setMemories(data.memories ?? []);
   }
+
+  useEffect(() => {
+    void loadSpaces().then((list) => {
+      if (list.length > 0 && !list.some((s) => s.name === containerTag)) {
+        setContainerTag(list[0].name);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     loadMemories(containerTag);
@@ -65,6 +89,63 @@ export default function Home() {
     setEditContent("");
   }, [containerTag]);
 
+  async function handleCreateSpace(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newSpaceName.trim()) return;
+
+    setSpaceBusy(true);
+    setSpaceError(null);
+    const res = await fetch("/api/spaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newSpaceName }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setSpaceError(data.error ?? "Could not create space");
+      setSpaceBusy(false);
+      return;
+    }
+
+    setNewSpaceName("");
+    await loadSpaces();
+    if (data.space?.name) setContainerTag(data.space.name);
+    setSpaceBusy(false);
+  }
+
+  async function handleDeleteSpace() {
+    if (containerTag === "default") return;
+
+    const current = spaces.find((s) => s.name === containerTag);
+    const count = current?.memoryCount ?? 0;
+    const message =
+      count > 0
+        ? `Delete space "${containerTag}" and its ${count} memor${count === 1 ? "y" : "ies"}?`
+        : `Delete empty space "${containerTag}"?`;
+
+    if (!confirm(message)) return;
+
+    setSpaceBusy(true);
+    setSpaceError(null);
+    const force = count > 0 ? "?force=true" : "";
+    const res = await fetch(
+      `/api/spaces/${encodeURIComponent(containerTag)}${force}`,
+      { method: "DELETE" }
+    );
+    const data = await res.json();
+
+    if (!res.ok) {
+      setSpaceError(data.error ?? "Could not delete space");
+      setSpaceBusy(false);
+      return;
+    }
+
+    const list = await loadSpaces();
+    setContainerTag(list[0]?.name ?? "default");
+    setSpaceBusy(false);
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!content.trim()) return;
@@ -78,6 +159,7 @@ export default function Home() {
 
     setContent("");
     await loadMemories(containerTag);
+    await loadSpaces();
     setLoading(false);
   }
 
@@ -136,6 +218,7 @@ export default function Home() {
       setEditingId(null);
       setEditContent("");
       await loadMemories(containerTag);
+      await loadSpaces();
       // Clear stale search/ask views that may cite old text
       setResults([]);
       setSearched(false);
@@ -156,6 +239,7 @@ export default function Home() {
     if (res.ok) {
       if (editingId === id) cancelEdit();
       await loadMemories(containerTag);
+      await loadSpaces();
       setResults((prev) => prev.filter((m) => m.id !== id));
       setCitations((prev) => prev.filter((m) => m.id !== id));
     }
@@ -173,22 +257,56 @@ export default function Home() {
         </p>
       </header>
 
-      <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
           Space
         </h2>
-        <select
-          id="space"
-          className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900"
-          value={containerTag}
-          onChange={(e) => setContainerTag(e.target.value)}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <select
+            id="space"
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 sm:min-w-[12rem]"
+            value={containerTag}
+            onChange={(e) => setContainerTag(e.target.value)}
+            disabled={spaces.length === 0}
+          >
+            {spaces.map((space) => (
+              <option key={space.name} value={space.name}>
+                {space.name}
+                {space.memoryCount > 0 ? ` (${space.memoryCount})` : ""}
+              </option>
+            ))}
+          </select>
+          {containerTag !== "default" && (
+            <button
+              type="button"
+              onClick={handleDeleteSpace}
+              disabled={spaceBusy}
+              className="self-start text-sm text-red-600 underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              Delete space
+            </button>
+          )}
+        </div>
+        <form
+          onSubmit={handleCreateSpace}
+          className="flex flex-col gap-2 sm:flex-row"
         >
-          {SPACES.map((space) => (
-            <option key={space} value={space}>
-              {space}
-            </option>
-          ))}
-        </select>
+          <input
+            className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900"
+            value={newSpaceName}
+            onChange={(e) => setNewSpaceName(e.target.value)}
+            placeholder="new-space-name"
+            disabled={spaceBusy}
+          />
+          <button
+            type="submit"
+            disabled={spaceBusy || !newSpaceName.trim()}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm text-zinc-900 disabled:opacity-50"
+          >
+            {spaceBusy ? "…" : "Add space"}
+          </button>
+        </form>
+        {spaceError && <p className="text-sm text-red-600">{spaceError}</p>}
       </section>
 
       <section>
