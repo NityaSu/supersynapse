@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { cosineSimilarity, embed } from "@/lib/embeddings";
+import { ensureSpace, normalizeSpaceName } from "@/lib/spaces";
 
 export type Memory = {
   id: string;
@@ -51,10 +52,16 @@ export async function addMemory(
   containerTag = "default"
 ): Promise<Memory> {
   const db = getDb();
+  const tag =
+    normalizeSpaceName(containerTag) ||
+    normalizeSpaceName("default") ||
+    "default";
+  ensureSpace(tag);
+
   const memory = {
     id: crypto.randomUUID(),
     content: content.trim(),
-    containerTag: containerTag.trim() || "default",
+    containerTag: tag,
     createdAt: new Date().toISOString(),
   };
 
@@ -103,10 +110,12 @@ export async function updateMemory(
       : existing.content;
   const containerTag =
     typeof updates.containerTag === "string"
-      ? updates.containerTag.trim() || "default"
+      ? normalizeSpaceName(updates.containerTag) || existing.containerTag
       : existing.containerTag;
 
   if (!content) return null;
+
+  ensureSpace(containerTag);
 
   const contentChanged = content !== existing.content;
   let embeddingJson: string | null = null;
