@@ -4,7 +4,7 @@ import { ollamaBaseUrl, ollamaChatModel } from "@/lib/ollama";
 export type AskResult = {
   answer: string;
   citations: Memory[];
-  mode: "semantic" | "keyword";
+  mode: "hybrid" | "semantic" | "keyword";
 };
 
 export async function askMemories(
