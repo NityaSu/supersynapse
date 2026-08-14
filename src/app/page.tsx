@@ -16,6 +16,12 @@ type Space = {
   memoryCount: number;
 };
 
+function modeLabel(mode: "hybrid" | "semantic" | "keyword") {
+  if (mode === "hybrid") return "hybrid (keyword + semantic)";
+  if (mode === "semantic") return "semantic (embeddings)";
+  return "keyword";
+}
+
 function formatDate(iso: string) {
   try {
     return new Date(iso).toLocaleString(undefined, {
@@ -38,13 +44,15 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [memories, setMemories] = useState<Memory[]>([]);
   const [results, setResults] = useState<Memory[]>([]);
-  const [searchMode, setSearchMode] = useState<"semantic" | "keyword" | null>(
-    null
-  );
+  const [searchMode, setSearchMode] = useState<
+    "hybrid" | "semantic" | "keyword" | null
+  >(null);
   const [searched, setSearched] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [citations, setCitations] = useState<Memory[]>([]);
-  const [askMode, setAskMode] = useState<"semantic" | "keyword" | null>(null);
+  const [askMode, setAskMode] = useState<
+    "hybrid" | "semantic" | "keyword" | null
+  >(null);
   const [asked, setAsked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [asking, setAsking] = useState(false);
@@ -351,7 +359,7 @@ export default function Home() {
         </form>
         {searchMode && (
           <p className="mt-2 text-sm text-zinc-500">
-            Mode: {searchMode === "semantic" ? "semantic (embeddings)" : "keyword"}
+            Mode: {modeLabel(searchMode)}
           </p>
         )}
       </section>
@@ -404,8 +412,7 @@ export default function Home() {
         </form>
         {askMode && (
           <p className="mt-2 text-sm text-zinc-500">
-            Retrieval:{" "}
-            {askMode === "semantic" ? "semantic (embeddings)" : "keyword"}
+            Retrieval: {modeLabel(askMode)}
           </p>
         )}
       </section>
