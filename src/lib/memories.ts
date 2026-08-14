@@ -12,7 +12,7 @@ export type Memory = {
 
 export type SearchResult = {
   results: Memory[];
-  mode: "semantic" | "keyword";
+  mode: "hybrid" | "semantic" | "keyword";
 };
 
 type MemoryRow = {
@@ -171,7 +171,25 @@ async function keywordSearch(
     )
     .all(containerTag, `%${q}%`) as MemoryRow[];
 
-  return rows.map((row) => rowToMemory(row));
+  // Keyword hits get a strong score so exact names/IDs aren't buried by vectors
+  return rows.map((row) => {
+    const text = row.content.toLowerCase();
+    const score = text === q ? 1 : text.includes(q) ? 0.9 : 0.75;
+    return rowToMemory(row, score);
+  });
+}
+
+function mergeByBestScore(a: Memory[], b: Memory[]): Memory[] {
+  const byId = new Map<string, Memory>();
+
+  for (const memory of [...a, ...b]) {
+    const prev = byId.get(memory.id);
+    if (!prev || (memory.score ?? 0) > (prev.score ?? 0)) {
+      byId.set(memory.id, memory);
+    }
+  }
+
+  return [...byId.values()].sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
 }
 
 /** Fill embeddings for rows missing vectors (or wrong dimension after model switch). */
@@ -223,12 +241,13 @@ export async function searchMemories(
   const q = query.trim();
   if (!q) return { results: [], mode: "keyword" };
 
+  const keywordHits = await keywordSearch(q, containerTag);
   const queryVector = await embed(q);
 
-  // Ollama down / embed model missing → Day 1 style keyword search
+  // Ollama down / embed model missing → keyword only
   if (!queryVector) {
     return {
-      results: await keywordSearch(q, containerTag),
+      results: keywordHits.slice(0, limit),
       mode: "keyword",
     };
   }
@@ -244,7 +263,7 @@ export async function searchMemories(
     )
     .all(containerTag) as MemoryRow[];
 
-  const scored = rows
+  const semanticHits = rows
     .map((row) => {
       if (!row.embedding) return null;
       try {
@@ -257,17 +276,27 @@ export async function searchMemories(
       }
     })
     .filter((m): m is Memory => m !== null)
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .filter((m) => (m.score ?? 0) >= 0.25);
+
+  const merged = mergeByBestScore(keywordHits, semanticHits)
     .filter((m) => (m.score ?? 0) >= 0.25)
     .slice(0, limit);
 
-  // If nothing scored well (e.g. old rows without embeddings), fall back
-  if (scored.length === 0) {
-    return {
-      results: await keywordSearch(q, containerTag),
-      mode: "keyword",
-    };
+  if (merged.length === 0) {
+    return { results: [], mode: "hybrid" };
   }
 
-  return { results: scored, mode: "semantic" };
+  const keywordIds = new Set(keywordHits.map((m) => m.id));
+  const semanticIds = new Set(semanticHits.map((m) => m.id));
+  const usedKeyword = merged.some((m) => keywordIds.has(m.id));
+  const usedSemantic = merged.some((m) => semanticIds.has(m.id));
+
+  const mode =
+    usedKeyword && usedSemantic
+      ? "hybrid"
+      : usedSemantic
+        ? "semantic"
+        : "keyword";
+
+  return { results: merged, mode };
 }
