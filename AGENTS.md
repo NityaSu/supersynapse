@@ -1,9 +1,35 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Supersynapse
 
+This project builds a memory/context **engine** (documents → chunks → graph memories).
+
+Invent our own internals (SQLite, Ollama). Grow the API in phases.
+
+## Domain
+
+- **Document** = raw input (text for now).
+- **Memory** = extracted atomic fact (graph). Distinct from the legacy notebook `memories` table.
+- Isolation = **`containerTag`**.
+- Ingest statuses: `queued → extracting → chunking → embedding → indexing → done` (or `failed`).
+- Later: graph relations (`updates` / `extends` / `derives`), search, profile, auth.
+
+## API (current → next)
+
+- `POST /v3/documents` — ingest
+- `GET /v3/documents/:id` — status
+- Later: search, profile, auth
+- Web UI last
+
+## Build order
+
+1. Data model + isolation
+2. Ingest pipeline + status machine
+3. Dreaming / graph relations
+4. Search + profile
+5. Auth
+6. Web/MCP last
+
+<!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code.
 <!-- END:nextjs-agent-rules -->
