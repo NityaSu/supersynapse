@@ -3,6 +3,7 @@ import {
   getDocument,
   listDocumentChunks,
 } from "@/lib/engine/documents";
+import { getDocumentDreamView } from "@/lib/engine/dream";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -22,5 +23,22 @@ export async function GET(_request: Request, context: RouteContext) {
     hasEmbedding: Boolean(c.embedding),
   }));
 
-  return NextResponse.json({ document, chunks });
+  const { memories, edges } = getDocumentDreamView(id);
+
+  return NextResponse.json({
+    document,
+    chunks,
+    memories: memories.map((m) => ({
+      id: m.id,
+      content: m.content,
+      isLatest: m.isLatest,
+      createdAt: m.createdAt,
+    })),
+    edges: edges.map((e) => ({
+      id: e.id,
+      fromMemoryId: e.fromMemoryId,
+      toMemoryId: e.toMemoryId,
+      relation: e.relation,
+    })),
+  });
 }
