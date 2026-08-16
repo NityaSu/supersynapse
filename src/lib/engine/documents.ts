@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/db";
 import { embed } from "@/lib/embeddings";
 import { ensureSpace, normalizeSpaceName } from "@/lib/spaces";
+import { dreamDocument } from "@/lib/engine/dream";
 import type {
   DocumentStatus,
   EngineChunk,
@@ -131,8 +132,7 @@ export function listDocumentChunks(documentId: string): EngineChunk[] {
 }
 
 /**
- * Create a document and run the ingest status machine synchronously (Phase 1/2).
- * Dreaming / graph extraction comes in a later phase.
+ * Create a document, run ingest, then instant dreaming (graph facts + edges).
  */
 export async function createDocument(input: {
   content: string;
@@ -197,7 +197,12 @@ export async function createDocument(input: {
     }
 
     setStatus(id, "indexing");
-    // Phase 1: indexing = chunks ready for search. Dreaming later.
+
+    const partial = getDocument(id);
+    if (partial) {
+      await dreamDocument(partial);
+    }
+
     setStatus(id, "done", { chunkCount: pieces.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "ingest failed";
