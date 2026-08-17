@@ -10,20 +10,21 @@ Invent our own internals (SQLite, Ollama). Grow the API in phases.
 - **Memory** = extracted atomic fact (graph). Distinct from the legacy notebook `memories` table.
 - Isolation = **`containerTag`**.
 - Ingest statuses: `queued → extracting → chunking → embedding → indexing → done` (or `failed`).
-- Later: graph relations (`updates` / `extends` / `derives`), search, profile, auth.
+- Instant dreaming after index: extract facts → `graph_memories`; link with `updates` / `extends` (and `derives` later).
 
 ## API (current → next)
 
-- `POST /v3/documents` — ingest
-- `GET /v3/documents/:id` — status
+- `POST /v3/documents` — ingest (+ dream)
+- `GET /v3/documents/:id` — status, chunks, graph memories/edges
+- `GET /v3/memories?containerTag=` — latest graph memories
 - Later: search, profile, auth
 - Web UI last
 
 ## Build order
 
-1. Data model + isolation
-2. Ingest pipeline + status machine
-3. Dreaming / graph relations
+1. Data model + isolation ✅
+2. Ingest pipeline + status machine ✅
+3. Dreaming / graph relations ✅
 4. Search + profile
 5. Auth
 6. Web/MCP last
