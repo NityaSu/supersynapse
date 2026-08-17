@@ -17,7 +17,9 @@ Invent our own internals (SQLite, Ollama). Grow the API in phases.
 - `POST /v3/documents` — ingest (+ dream)
 - `GET /v3/documents/:id` — status, chunks, graph memories/edges
 - `GET /v3/memories?containerTag=` — latest graph memories
-- Later: search, profile, auth
+- `POST /v4/search` — hybrid search over chunks + graph memories
+- `POST /v4/profile` — profile stub (dynamic = latest facts)
+- Later: auth
 - Web UI last
 
 ## Build order
@@ -25,7 +27,7 @@ Invent our own internals (SQLite, Ollama). Grow the API in phases.
 1. Data model + isolation ✅
 2. Ingest pipeline + status machine ✅
 3. Dreaming / graph relations ✅
-4. Search + profile
+4. Search + profile ✅
 5. Auth
 6. Web/MCP last
 
