@@ -78,8 +78,24 @@
   }
 }
 
-.logo-ring {
-  animation: breathe 5s ease-in-out infinite;
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-brand);
+  box-shadow: 0 0 8px rgba(255, 102, 0, 0.35);
+  animation: pulse-dot 2.5s ease-in-out infinite;
 }
 
 html {

@@ -1,6 +1,7 @@
 "use client";
 
 import { MemoryCard } from "@/components/memories/memory-card";
+import { ResurfaceSection } from "@/components/memories/resurface-section";
 import { SearchToolbar } from "@/components/memories/search-toolbar";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -39,6 +40,7 @@ export function MemoryFeed() {
           </p>
         </div>
         <SearchToolbar />
+        <ResurfaceSection />
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold tracking-tight lg:text-xl">
