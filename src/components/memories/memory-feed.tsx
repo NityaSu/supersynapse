@@ -4,6 +4,7 @@ import { MemoryCard } from "@/components/memories/memory-card";
 import { SearchToolbar } from "@/components/memories/search-toolbar";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Logo } from "@/components/ui/logo";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { cn } from "@/lib/cn";
 
@@ -25,12 +26,24 @@ export function MemoryFeed() {
   return (
     <main className="min-w-0 flex-1 lg:ml-[260px] xl:mr-[300px]">
       <div className="mx-auto max-w-[720px] px-4 py-4 pb-20 lg:px-5 lg:py-6">
+        <div className="mb-14 flex flex-col items-center text-center">
+          <Logo size={72} className="mb-6" />
+          <h1 className="font-display mb-2 text-[26px] font-bold tracking-[-1px] text-ink sm:text-[32px]">
+            What is on your mind?
+          </h1>
+          <p className="max-w-[34rem] text-[15px] leading-[1.6] text-ink-muted">
+            Drop a thought. Supersynapse will bring it back when it matters most
+            —{" "}
+            <br />
+            so you stress less, forget less.
+          </p>
+        </div>
         <SearchToolbar />
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg font-bold tracking-tight lg:text-xl">
+            <h2 className="text-lg font-bold tracking-tight lg:text-xl">
               {viewTitle}
-            </h1>
+            </h2>
             <p className="mt-0.5 text-[13px] text-ink-muted">
               {viewSubtitle}
               {semanticMode && searchQuery.trim() && searchMode

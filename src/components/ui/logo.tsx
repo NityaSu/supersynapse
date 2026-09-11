@@ -30,7 +30,14 @@ export function Logo({
       aria-hidden
     >
       {ring ? (
-        <span className="logo-ring pointer-events-none absolute inset-[-5px] rounded-full border-[1.5px] border-brand/35" />
+        <span
+          className={cn(
+            "logo-ring pointer-events-none absolute rounded-full border-brand/35",
+            size >= 64
+              ? "inset-[-8px] border-2"
+              : "inset-[-5px] border-[1.5px]"
+          )}
+        />
       ) : null}
       <svg viewBox="0 0 100 100" width={mark} height={mark} fill="currentColor">
         {PATHS.map((d) => (
