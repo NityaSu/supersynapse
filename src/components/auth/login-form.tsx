@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+import { Logo } from "@/components/ui/logo";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -108,7 +108,7 @@ export function LoginForm() {
           : "Already have an account? Sign in"}
       </button>
       <p className="flex items-center justify-center gap-1.5 text-[11px] text-ink-subtle">
-        <Icon name="bolt" size={12} />
+        <Logo size={14} ring={false} />
         Free to use. Your memories stay private to your account.
       </p>
     </form>

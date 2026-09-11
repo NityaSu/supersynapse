@@ -4,6 +4,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Kbd } from "@/components/ui/kbd";
+import { Logo, Wordmark } from "@/components/ui/logo";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 
 export function Topbar() {
@@ -28,16 +29,11 @@ export function Topbar() {
         </Button>
         <a
           href="#"
-          className="flex items-center gap-2.5 text-ink no-underline"
+          className="flex items-center gap-3 text-ink no-underline"
           onClick={(e) => e.preventDefault()}
         >
-          <div className="flex size-8 items-center justify-center rounded-lg bg-brand text-white shadow-[0_2px_8px_rgba(255,102,0,0.25)]">
-            <Icon name="bolt" size={18} />
-          </div>
-          <span className="text-base font-bold tracking-tight">Supersynapse</span>
-          <span className="rounded-full border border-brand/15 bg-brand-light px-2 py-0.5 text-[10px] font-semibold text-brand">
-            Beta
-          </span>
+          <Logo size={36} />
+          <Wordmark />
         </a>
       </div>
       <div className="flex items-center gap-2">
