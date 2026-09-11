@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Supersynapse
 
-## Getting Started
+A personal memory layer: save notes by space, search them (keyword + semantic), and ask questions over what you stored.
 
-First, run the development server:
+Hosted on **Vercel + Supabase + Gemini**. No local database or Ollama.
+
+## Setup (free)
+
+1. Create a [Supabase](https://supabase.com) project.
+2. In **SQL Editor**, paste and run `supabase/schema.sql`.
+3. Auth → Providers → Email: you can turn **Confirm email** off while testing.
+4. Auth → URL configuration:
+   - Site URL: `http://localhost:3000` (and later your `https://….vercel.app`)
+   - Redirect URLs: `http://localhost:3000/auth/callback` and the Vercel equivalent
+5. Project Settings → API: copy **Project URL** and **anon public** key.
+6. Create a [Gemini API key](https://aistudio.google.com/apikey) (free tier).
+7. Copy `.env.local.example` to `.env.local` and fill the values.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun install
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open [http://localhost:3000](http://localhost:3000), create an account, save a memory.
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. Push this repo and import it on Vercel (`bun run build`).
+2. Set the same env vars as `.env.local.example`.
+3. Add the Vercel URL to Supabase Site URL / Redirect URLs.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Anyone who signs up gets their own private spaces. Search and Ask use Gemini until the free daily quota is hit; keyword search still works without it.
+
+## API
+
+All routes require a signed-in session cookie.
+
+- `GET/POST /api/spaces` `DELETE /api/spaces/:name`
+- `GET/POST /api/memories` `PATCH/DELETE /api/memories/:id`
+- `GET /api/search?q=&containerTag=`
+- `POST /api/ask`
+- `POST /api/v3/documents` — ingest + dream
+- `GET /api/v3/documents/:id`
+- `GET /api/v3/memories?containerTag=`
+- `POST /api/v4/search`
+- `POST /api/v4/profile`
