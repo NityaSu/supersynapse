@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 
 export type Space = {
   name: string;
@@ -6,11 +6,7 @@ export type Space = {
   memoryCount: number;
 };
 
-type SpaceRow = {
-  name: string;
-  created_at: string;
-  memory_count: number;
-};
+const DEFAULT_SPACES = ["default", "work", "personal"] as const;
 
 /** Normalize space names: trim, lowercase, hyphens for spaces. */
 export function normalizeSpaceName(name: string): string {
@@ -23,81 +19,104 @@ export function normalizeSpaceName(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function listSpaces(): Space[] {
-  const db = getDb();
-  const rows = db
-    .query(
-      `SELECT s.name, s.created_at,
-              (SELECT COUNT(*) FROM memories m WHERE m.container_tag = s.name) AS memory_count
-       FROM spaces s
-       ORDER BY s.name ASC`
-    )
-    .all() as SpaceRow[];
+async function seedDefaultSpaces() {
+  const { supabase, user } = await requireUser();
+  const now = new Date().toISOString();
+  await supabase.from("spaces").upsert(
+    DEFAULT_SPACES.map((name) => ({
+      user_id: user.id,
+      name,
+      created_at: now,
+    })),
+    { onConflict: "user_id,name", ignoreDuplicates: true }
+  );
+}
 
-  return rows.map((row) => ({
+export async function listSpaces(): Promise<Space[]> {
+  const { supabase } = await requireUser();
+  await seedDefaultSpaces();
+
+  const { data: spaceRows, error } = await supabase
+    .from("spaces")
+    .select("name, created_at")
+    .order("name", { ascending: true });
+
+  if (error) throw error;
+
+  const { data: memoryRows, error: countError } = await supabase
+    .from("memories")
+    .select("container_tag");
+  if (countError) throw countError;
+
+  const counts = new Map<string, number>();
+  for (const row of memoryRows ?? []) {
+    counts.set(row.container_tag, (counts.get(row.container_tag) ?? 0) + 1);
+  }
+
+  return (spaceRows ?? []).map((row) => ({
     name: row.name,
     createdAt: row.created_at,
-    memoryCount: Number(row.memory_count) || 0,
+    memoryCount: counts.get(row.name) ?? 0,
   }));
 }
 
-export function ensureSpace(name: string): Space | null {
+export async function ensureSpace(name: string): Promise<Space | null> {
   const normalized = normalizeSpaceName(name);
   if (!normalized) return null;
 
-  const db = getDb();
-  db.run(`INSERT OR IGNORE INTO spaces (name, created_at) VALUES (?, ?)`, [
-    normalized,
-    new Date().toISOString(),
-  ]);
+  const { supabase, user } = await requireUser();
+  const { error } = await supabase.from("spaces").upsert(
+    {
+      user_id: user.id,
+      name: normalized,
+      created_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,name", ignoreDuplicates: true }
+  );
+  if (error) throw error;
 
-  const row = db
-    .query(
-      `SELECT s.name, s.created_at,
-              (SELECT COUNT(*) FROM memories m WHERE m.container_tag = s.name) AS memory_count
-       FROM spaces s
-       WHERE s.name = ?`
-    )
-    .get(normalized) as SpaceRow | null;
-
-  if (!row) return null;
-  return {
-    name: row.name,
-    createdAt: row.created_at,
-    memoryCount: Number(row.memory_count) || 0,
-  };
+  return { name: normalized, createdAt: new Date().toISOString(), memoryCount: 0 };
 }
 
-export function createSpace(name: string): { space: Space } | { error: string } {
+export async function createSpace(
+  name: string
+): Promise<{ space: Space } | { error: string }> {
   const normalized = normalizeSpaceName(name);
   if (!normalized) {
     return { error: "space name is required" };
   }
 
-  const db = getDb();
-  const existing = db
-    .query(`SELECT name FROM spaces WHERE name = ?`)
-    .get(normalized) as { name: string } | null;
+  const { supabase, user } = await requireUser();
+  const { data: existing } = await supabase
+    .from("spaces")
+    .select("name")
+    .eq("name", normalized)
+    .maybeSingle();
 
   if (existing) {
     return { error: "space already exists" };
   }
 
   const createdAt = new Date().toISOString();
-  db.run(`INSERT INTO spaces (name, created_at) VALUES (?, ?)`, [
-    normalized,
-    createdAt,
-  ]);
+  const { error } = await supabase.from("spaces").insert({
+    user_id: user.id,
+    name: normalized,
+    created_at: createdAt,
+  });
+  if (error) {
+    if (error.code === "23505") return { error: "space already exists" };
+    throw error;
+  }
 
   return {
     space: { name: normalized, createdAt, memoryCount: 0 },
   };
 }
 
-export function deleteSpace(
+export async function deleteSpace(
   name: string,
   options: { force?: boolean } = {}
-): { ok: true } | { error: string; status: number } {
+): Promise<{ ok: true } | { error: string; status: number }> {
   const normalized = normalizeSpaceName(name);
   if (!normalized) {
     return { error: "space name is required", status: 400 };
@@ -107,31 +126,33 @@ export function deleteSpace(
     return { error: "cannot delete the default space", status: 400 };
   }
 
-  const db = getDb();
-  const existing = db
-    .query(`SELECT name FROM spaces WHERE name = ?`)
-    .get(normalized) as { name: string } | null;
+  const { supabase } = await requireUser();
+  const { data: existing } = await supabase
+    .from("spaces")
+    .select("name")
+    .eq("name", normalized)
+    .maybeSingle();
 
   if (!existing) {
     return { error: "space not found", status: 404 };
   }
 
-  const countRow = db
-    .query(`SELECT COUNT(*) AS count FROM memories WHERE container_tag = ?`)
-    .get(normalized) as { count: number };
+  const { count, error: countError } = await supabase
+    .from("memories")
+    .select("id", { count: "exact", head: true })
+    .eq("container_tag", normalized);
 
-  const count = Number(countRow.count) || 0;
-  if (count > 0 && !options.force) {
+  if (countError) throw countError;
+
+  const memoryCount = count ?? 0;
+  if (memoryCount > 0 && !options.force) {
     return {
-      error: `space has ${count} memor${count === 1 ? "y" : "ies"}; pass force=true to delete them too`,
+      error: `space has ${memoryCount} memor${memoryCount === 1 ? "y" : "ies"}; pass force=true to delete them too`,
       status: 409,
     };
   }
 
-  if (options.force && count > 0) {
-    db.run(`DELETE FROM memories WHERE container_tag = ?`, [normalized]);
-  }
-
-  db.run(`DELETE FROM spaces WHERE name = ?`, [normalized]);
+  const { error } = await supabase.from("spaces").delete().eq("name", normalized);
+  if (error) throw error;
   return { ok: true };
 }

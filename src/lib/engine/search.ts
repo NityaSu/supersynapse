@@ -1,6 +1,7 @@
-import { getDb } from "@/lib/db";
-import { cosineSimilarity, embed } from "@/lib/embeddings";
+import { requireUser } from "@/lib/auth";
+import { embed } from "@/lib/embeddings";
 import { normalizeSpaceName } from "@/lib/spaces";
+import { escapeIlike } from "@/lib/vector";
 
 export type SearchHitKind = "chunk" | "memory";
 
@@ -20,23 +21,6 @@ export type EngineSearchResult = {
   containerTag: string;
 };
 
-type ChunkRow = {
-  id: string;
-  document_id: string;
-  container_tag: string;
-  content: string;
-  embedding: string | null;
-};
-
-type MemoryRow = {
-  id: string;
-  document_id: string | null;
-  container_tag: string;
-  content: string;
-  is_latest: number;
-  embedding: string | null;
-};
-
 function keywordScore(content: string, q: string): number {
   const text = content.toLowerCase();
   if (text === q) return 1;
@@ -54,33 +38,33 @@ function mergeHits(hits: EngineSearchHit[]): EngineSearchHit[] {
   return [...byKey.values()].sort((a, b) => b.score - a.score);
 }
 
-function keywordHits(
+async function keywordHits(
   containerTag: string,
   q: string
-): EngineSearchHit[] {
-  const db = getDb();
-  const like = `%${q}%`;
+): Promise<EngineSearchHit[]> {
+  const { supabase } = await requireUser();
+  const like = `%${escapeIlike(q)}%`;
 
-  const chunks = db
-    .query(
-      `SELECT id, document_id, container_tag, content, embedding
-       FROM chunks
-       WHERE container_tag = ? AND lower(content) LIKE ?`
-    )
-    .all(containerTag, like) as ChunkRow[];
+  const [{ data: chunks, error: chunkError }, { data: memories, error: memError }] =
+    await Promise.all([
+      supabase
+        .from("chunks")
+        .select("id, document_id, container_tag, content")
+        .eq("container_tag", containerTag)
+        .ilike("content", like),
+      supabase
+        .from("graph_memories")
+        .select("id, document_id, container_tag, content, is_latest")
+        .eq("container_tag", containerTag)
+        .eq("is_latest", true)
+        .ilike("content", like),
+    ]);
 
-  const memories = db
-    .query(
-      `SELECT id, document_id, container_tag, content, is_latest, embedding
-       FROM graph_memories
-       WHERE container_tag = ?
-         AND is_latest = 1
-         AND lower(content) LIKE ?`
-    )
-    .all(containerTag, like) as MemoryRow[];
+  if (chunkError) throw chunkError;
+  if (memError) throw memError;
 
   return [
-    ...chunks.map((row) => ({
+    ...(chunks ?? []).map((row) => ({
       id: row.id,
       kind: "chunk" as const,
       content: row.content,
@@ -88,83 +72,79 @@ function keywordHits(
       documentId: row.document_id,
       score: keywordScore(row.content, q),
     })),
-    ...memories.map((row) => ({
+    ...(memories ?? []).map((row) => ({
       id: row.id,
       kind: "memory" as const,
       content: row.content,
       containerTag: row.container_tag,
       documentId: row.document_id,
       score: keywordScore(row.content, q),
-      isLatest: row.is_latest === 1,
+      isLatest: Boolean(row.is_latest),
     })),
   ].filter((h) => h.score > 0);
 }
 
-function semanticHits(
+async function semanticHits(
   containerTag: string,
   queryVector: number[]
-): EngineSearchHit[] {
-  const db = getDb();
+): Promise<EngineSearchHit[]> {
+  const { supabase } = await requireUser();
+  const [{ data: chunks, error: chunkError }, { data: memories, error: memError }] =
+    await Promise.all([
+      supabase.rpc("match_chunks", {
+        query_embedding: queryVector,
+        match_container_tag: containerTag,
+        match_count: 20,
+      }),
+      supabase.rpc("match_graph_memories", {
+        query_embedding: queryVector,
+        match_container_tag: containerTag,
+        match_count: 20,
+      }),
+    ]);
 
-  const chunks = db
-    .query(
-      `SELECT id, document_id, container_tag, content, embedding
-       FROM chunks WHERE container_tag = ?`
-    )
-    .all(containerTag) as ChunkRow[];
+  if (chunkError) console.error("match_chunks failed:", chunkError.message);
+  if (memError) console.error("match_graph_memories failed:", memError.message);
 
-  const memories = db
-    .query(
-      `SELECT id, document_id, container_tag, content, is_latest, embedding
-       FROM graph_memories
-       WHERE container_tag = ? AND is_latest = 1`
-    )
-    .all(containerTag) as MemoryRow[];
+  type ChunkHit = {
+    id: string;
+    document_id: string;
+    content: string;
+    container_tag: string;
+    score: number;
+  };
+  type MemoryHit = {
+    id: string;
+    document_id: string | null;
+    content: string;
+    container_tag: string;
+    is_latest: boolean;
+    score: number;
+  };
 
-  const fromChunks: EngineSearchHit[] = [];
-  for (const row of chunks) {
-    if (!row.embedding) continue;
-    try {
-      const vector = JSON.parse(row.embedding) as number[];
-      if (vector.length !== queryVector.length) continue;
-      const score = cosineSimilarity(queryVector, vector);
-      if (score < 0.25) continue;
-      fromChunks.push({
+  return [
+    ...((chunks ?? []) as ChunkHit[])
+      .filter((row) => row.score >= 0.25)
+      .map((row) => ({
         id: row.id,
-        kind: "chunk",
+        kind: "chunk" as const,
         content: row.content,
         containerTag: row.container_tag,
         documentId: row.document_id,
-        score,
-      });
-    } catch {
-      /* skip bad embedding */
-    }
-  }
-
-  const fromMemories: EngineSearchHit[] = [];
-  for (const row of memories) {
-    if (!row.embedding) continue;
-    try {
-      const vector = JSON.parse(row.embedding) as number[];
-      if (vector.length !== queryVector.length) continue;
-      const score = cosineSimilarity(queryVector, vector);
-      if (score < 0.25) continue;
-      fromMemories.push({
+        score: row.score,
+      })),
+    ...((memories ?? []) as MemoryHit[])
+      .filter((row) => row.score >= 0.25)
+      .map((row) => ({
         id: row.id,
-        kind: "memory",
+        kind: "memory" as const,
         content: row.content,
         containerTag: row.container_tag,
         documentId: row.document_id,
-        score,
-        isLatest: row.is_latest === 1,
-      });
-    } catch {
-      /* skip */
-    }
-  }
-
-  return [...fromChunks, ...fromMemories];
+        score: row.score,
+        isLatest: Boolean(row.is_latest),
+      })),
+  ];
 }
 
 /**
@@ -177,14 +157,13 @@ export async function searchEngine(
   limit = 10
 ): Promise<EngineSearchResult> {
   const q = query.trim().toLowerCase();
-  const containerTag =
-    normalizeSpaceName(containerTagInput) || "default";
+  const containerTag = normalizeSpaceName(containerTagInput) || "default";
 
   if (!q) {
     return { results: [], mode: "keyword", containerTag };
   }
 
-  const kw = keywordHits(containerTag, q);
+  const kw = await keywordHits(containerTag, q);
   const queryVector = await embed(query.trim());
 
   if (!queryVector) {
@@ -195,7 +174,7 @@ export async function searchEngine(
     };
   }
 
-  const sem = semanticHits(containerTag, queryVector);
+  const sem = await semanticHits(containerTag, queryVector);
   const merged = mergeHits([...kw, ...sem])
     .filter((h) => h.score >= 0.25)
     .slice(0, limit);

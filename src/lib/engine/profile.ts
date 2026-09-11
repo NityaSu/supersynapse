@@ -16,10 +16,11 @@ export type ProfileResult = {
  * Thin profile stub: dynamic = latest graph facts for the tag.
  * Static stays empty until a richer profile model exists.
  */
-export function getProfile(containerTagInput = "default"): ProfileResult {
-  const containerTag =
-    normalizeSpaceName(containerTagInput) || "default";
-  const memories = listLatestGraphMemories(containerTag, 50);
+export async function getProfile(
+  containerTagInput = "default"
+): Promise<ProfileResult> {
+  const containerTag = normalizeSpaceName(containerTagInput) || "default";
+  const memories = await listLatestGraphMemories(containerTag, 50);
 
   return {
     containerTag,

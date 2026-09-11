@@ -1,5 +1,5 @@
 import { embed } from "@/lib/embeddings";
-import { ollamaBaseUrl, ollamaChatModel } from "@/lib/ollama";
+import { geminiChat } from "@/lib/gemini";
 import {
   findClosestLatestMemory,
   insertEdge,
@@ -55,51 +55,25 @@ function parseFactsJson(raw: string): string[] {
 }
 
 async function extractFacts(content: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${ollamaBaseUrl()}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: ollamaChatModel(),
-        temperature: 0.1,
-        messages: [
-          {
-            role: "system",
-            content: `Extract atomic personal/world facts from the document.
+  const text = await geminiChat({
+    temperature: 0.1,
+    system: `Extract atomic personal/world facts from the document.
 Return ONLY a JSON array of short strings.
 Each fact should be one clear statement (e.g. "User loves Paris").
 No markdown, no commentary.`,
-          },
-          {
-            role: "user",
-            content: content.slice(0, 6000),
-          },
-        ],
-      }),
-    });
+    user: content.slice(0, 6000),
+  });
 
-    if (!res.ok) {
-      console.error("dream extract failed:", res.status, await res.text());
-      return fallbackFacts(content);
-    }
-
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const text = data.choices?.[0]?.message?.content ?? "";
-    const facts = parseFactsJson(text);
-    return facts.length > 0 ? facts : fallbackFacts(content);
-  } catch (err) {
-    console.error("dream extract failed:", err);
-    return fallbackFacts(content);
-  }
+  if (!text) return fallbackFacts(content);
+  const facts = parseFactsJson(text);
+  return facts.length > 0 ? facts : fallbackFacts(content);
 }
 
 /**
  * Instant dreaming: extract facts from a document, link them into the graph.
- * - high similarity → updates (supersede old, isLatest=0)
+ * - high similarity → updates (supersede old, isLatest=false)
  * - medium → extends
- * - else → new root fact (optional derives edge skipped until richer model)
+ * - else → new root fact
  */
 export async function dreamDocument(
   document: EngineDocument
@@ -115,7 +89,7 @@ export async function dreamDocument(
     let related: GraphMemory | null = null;
 
     if (vector) {
-      const closest = findClosestLatestMemory(
+      const closest = await findClosestLatestMemory(
         document.containerTag,
         vector,
         exclude
@@ -140,11 +114,10 @@ export async function dreamDocument(
 
     if (relation && related) {
       if (relation === "updates") {
-        markMemoryNotLatest(related.id);
+        await markMemoryNotLatest(related.id);
       }
-      // Edge: new memory → related memory
       edges.push(
-        insertEdge({
+        await insertEdge({
           containerTag: document.containerTag,
           fromMemoryId: memory.id,
           toMemoryId: related.id,
@@ -157,11 +130,11 @@ export async function dreamDocument(
   return { memories: created, edges, extracted: facts.length };
 }
 
-export function getDocumentDreamView(documentId: string): {
+export async function getDocumentDreamView(documentId: string): Promise<{
   memories: GraphMemory[];
   edges: MemoryEdge[];
-} {
-  const memories = listGraphMemoriesForDocument(documentId);
-  const edges = listEdgesForMemories(memories.map((m) => m.id));
+}> {
+  const memories = await listGraphMemoriesForDocument(documentId);
+  const edges = await listEdgesForMemories(memories.map((m) => m.id));
   return { memories, edges };
 }

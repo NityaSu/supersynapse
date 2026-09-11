@@ -1,6 +1,7 @@
-import { getDb } from "@/lib/db";
-import { cosineSimilarity, embed } from "@/lib/embeddings";
+import { requireUser } from "@/lib/auth";
+import { embed } from "@/lib/embeddings";
 import { ensureSpace, normalizeSpaceName } from "@/lib/spaces";
+import { escapeIlike, toVectorLiteral } from "@/lib/vector";
 
 export type Memory = {
   id: string;
@@ -20,7 +21,6 @@ type MemoryRow = {
   content: string;
   container_tag: string;
   created_at: string;
-  embedding: string | null;
 };
 
 function rowToMemory(row: MemoryRow, score?: number): Memory {
@@ -34,29 +34,27 @@ function rowToMemory(row: MemoryRow, score?: number): Memory {
 }
 
 export async function listMemories(containerTag = "default"): Promise<Memory[]> {
-  const db = getDb();
-  const rows = db
-    .query(
-      `SELECT id, content, container_tag, created_at, embedding
-       FROM memories
-       WHERE container_tag = ?
-       ORDER BY created_at DESC`
-    )
-    .all(containerTag) as MemoryRow[];
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("memories")
+    .select("id, content, container_tag, created_at")
+    .eq("container_tag", containerTag)
+    .order("created_at", { ascending: false });
 
-  return rows.map((row) => rowToMemory(row));
+  if (error) throw error;
+  return (data ?? []).map((row) => rowToMemory(row));
 }
 
 export async function addMemory(
   content: string,
   containerTag = "default"
 ): Promise<Memory> {
-  const db = getDb();
+  const { supabase, user } = await requireUser();
   const tag =
     normalizeSpaceName(containerTag) ||
     normalizeSpaceName("default") ||
     "default";
-  ensureSpace(tag);
+  await ensureSpace(tag);
 
   const memory = {
     id: crypto.randomUUID(),
@@ -65,42 +63,36 @@ export async function addMemory(
     createdAt: new Date().toISOString(),
   };
 
-  // Store a vector for semantic search (null if Ollama is down)
   const vector = await embed(memory.content);
-  const embeddingJson = vector ? JSON.stringify(vector) : null;
-
-  db.run(
-    `INSERT INTO memories (id, content, container_tag, created_at, embedding)
-     VALUES (?, ?, ?, ?, ?)`,
-    [
-      memory.id,
-      memory.content,
-      memory.containerTag,
-      memory.createdAt,
-      embeddingJson,
-    ]
-  );
-
+  const { error } = await supabase.from("memories").insert({
+    id: memory.id,
+    user_id: user.id,
+    content: memory.content,
+    container_tag: memory.containerTag,
+    created_at: memory.createdAt,
+    embedding: vector ? toVectorLiteral(vector) : null,
+  });
+  if (error) throw error;
   return memory;
 }
 
 export async function getMemory(id: string): Promise<Memory | null> {
-  const db = getDb();
-  const row = db
-    .query(
-      `SELECT id, content, container_tag, created_at, embedding
-       FROM memories
-       WHERE id = ?`
-    )
-    .get(id) as MemoryRow | null;
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("memories")
+    .select("id, content, container_tag, created_at")
+    .eq("id", id)
+    .maybeSingle();
 
-  return row ? rowToMemory(row) : null;
+  if (error) throw error;
+  return data ? rowToMemory(data) : null;
 }
 
 export async function updateMemory(
   id: string,
   updates: { content?: string; containerTag?: string }
 ): Promise<Memory | null> {
+  const { supabase } = await requireUser();
   const existing = await getMemory(id);
   if (!existing) return null;
 
@@ -115,29 +107,20 @@ export async function updateMemory(
 
   if (!content) return null;
 
-  ensureSpace(containerTag);
+  await ensureSpace(containerTag);
 
-  const contentChanged = content !== existing.content;
-  let embeddingJson: string | null = null;
+  const patch: Record<string, unknown> = {
+    content,
+    container_tag: containerTag,
+  };
 
-  if (contentChanged) {
+  if (content !== existing.content) {
     const vector = await embed(content);
-    embeddingJson = vector ? JSON.stringify(vector) : null;
-
-    const db = getDb();
-    db.run(
-      `UPDATE memories
-       SET content = ?, container_tag = ?, embedding = ?
-       WHERE id = ?`,
-      [content, containerTag, embeddingJson, id]
-    );
-  } else {
-    const db = getDb();
-    db.run(`UPDATE memories SET container_tag = ? WHERE id = ?`, [
-      containerTag,
-      id,
-    ]);
+    patch.embedding = vector ? toVectorLiteral(vector) : null;
   }
+
+  const { error } = await supabase.from("memories").update(patch).eq("id", id);
+  if (error) throw error;
 
   return {
     id,
@@ -148,9 +131,15 @@ export async function updateMemory(
 }
 
 export async function deleteMemory(id: string): Promise<boolean> {
-  const db = getDb();
-  const result = db.run(`DELETE FROM memories WHERE id = ?`, [id]);
-  return result.changes > 0;
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("memories")
+    .delete()
+    .eq("id", id)
+    .select("id");
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
 }
 
 async function keywordSearch(
@@ -160,19 +149,17 @@ async function keywordSearch(
   const q = query.trim().toLowerCase();
   if (!q) return [];
 
-  const db = getDb();
-  const rows = db
-    .query(
-      `SELECT id, content, container_tag, created_at, embedding
-       FROM memories
-       WHERE container_tag = ?
-         AND lower(content) LIKE ?
-       ORDER BY created_at DESC`
-    )
-    .all(containerTag, `%${q}%`) as MemoryRow[];
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("memories")
+    .select("id, content, container_tag, created_at")
+    .eq("container_tag", containerTag)
+    .ilike("content", `%${escapeIlike(q)}%`)
+    .order("created_at", { ascending: false });
 
-  // Keyword hits get a strong score so exact names/IDs aren't buried by vectors
-  return rows.map((row) => {
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
     const text = row.content.toLowerCase();
     const score = text === q ? 1 : text.includes(q) ? 0.9 : 0.75;
     return rowToMemory(row, score);
@@ -192,43 +179,27 @@ function mergeByBestScore(a: Memory[], b: Memory[]): Memory[] {
   return [...byId.values()].sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
 }
 
-/** Fill embeddings for rows missing vectors (or wrong dimension after model switch). */
 export async function backfillMissingEmbeddings(
-  containerTag = "default",
-  expectedDim?: number
+  containerTag = "default"
 ): Promise<number> {
-  const db = getDb();
-  const rows = db
-    .query(
-      `SELECT id, content, container_tag, created_at, embedding
-       FROM memories
-       WHERE container_tag = ?`
-    )
-    .all(containerTag) as MemoryRow[];
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("memories")
+    .select("id, content, embedding")
+    .eq("container_tag", containerTag)
+    .is("embedding", null);
+
+  if (error) throw error;
 
   let updated = 0;
-  for (const row of rows) {
-    let needsEmbed = !row.embedding;
-    if (!needsEmbed && expectedDim !== undefined && row.embedding) {
-      try {
-        const existing = JSON.parse(row.embedding) as number[];
-        needsEmbed = existing.length !== expectedDim;
-      } catch {
-        needsEmbed = true;
-      }
-    } else if (!needsEmbed) {
-      continue;
-    }
-
-    if (!needsEmbed) continue;
-
+  for (const row of data ?? []) {
     const vector = await embed(row.content);
     if (!vector) continue;
-    db.run(`UPDATE memories SET embedding = ? WHERE id = ?`, [
-      JSON.stringify(vector),
-      row.id,
-    ]);
-    updated += 1;
+    const { error: updateError } = await supabase
+      .from("memories")
+      .update({ embedding: toVectorLiteral(vector) })
+      .eq("id", row.id);
+    if (!updateError) updated += 1;
   }
   return updated;
 }
@@ -241,10 +212,10 @@ export async function searchMemories(
   const q = query.trim();
   if (!q) return { results: [], mode: "keyword" };
 
+  const { supabase } = await requireUser();
   const keywordHits = await keywordSearch(q, containerTag);
   const queryVector = await embed(q);
 
-  // Ollama down / embed model missing → keyword only
   if (!queryVector) {
     return {
       results: keywordHits.slice(0, limit),
@@ -252,31 +223,23 @@ export async function searchMemories(
     };
   }
 
-  await backfillMissingEmbeddings(containerTag, queryVector.length);
+  await backfillMissingEmbeddings(containerTag);
 
-  const db = getDb();
-  const rows = db
-    .query(
-      `SELECT id, content, container_tag, created_at, embedding
-       FROM memories
-       WHERE container_tag = ?`
-    )
-    .all(containerTag) as MemoryRow[];
+  const { data, error } = await supabase.rpc("match_memories", {
+    query_embedding: queryVector,
+    match_container_tag: containerTag,
+    match_count: limit,
+  });
 
-  const semanticHits = rows
-    .map((row) => {
-      if (!row.embedding) return null;
-      try {
-        const memoryVector = JSON.parse(row.embedding) as number[];
-        if (memoryVector.length !== queryVector.length) return null;
-        const score = cosineSimilarity(queryVector, memoryVector);
-        return rowToMemory(row, score);
-      } catch {
-        return null;
-      }
-    })
-    .filter((m): m is Memory => m !== null)
-    .filter((m) => (m.score ?? 0) >= 0.25);
+  const semanticHits: Memory[] = error
+    ? []
+    : ((data ?? []) as Array<MemoryRow & { score: number }>)
+        .filter((row) => (row.score ?? 0) >= 0.25)
+        .map((row) => rowToMemory(row, row.score));
+
+  if (error) {
+    console.error("match_memories failed:", error.message);
+  }
 
   const merged = mergeByBestScore(keywordHits, semanticHits)
     .filter((m) => (m.score ?? 0) >= 0.25)
