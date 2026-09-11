@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Avatar } from "@/components/ui/avatar";
+import { UserMenu } from "@/components/auth/user-menu";
 import { Overlay } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -149,13 +149,7 @@ export function Sidebar() {
           </Button>
         </nav>
         <div className="mt-auto border-t border-line p-4">
-          <div className="flex items-center gap-2.5 rounded-[10px] border border-line bg-canvas p-2.5">
-            <Avatar size="sm" />
-            <div className="min-w-0">
-              <div className="text-[13px] font-semibold">Local</div>
-              <div className="text-[11px] text-ink-muted">On this device</div>
-            </div>
-          </div>
+          <UserMenu />
         </div>
       </aside>
     </>

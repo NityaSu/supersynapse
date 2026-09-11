@@ -3,6 +3,9 @@ import type { Space } from "@/lib/spaces";
 import type { SearchMode } from "@/lib/types";
 
 async function readJson<T>(res: Response): Promise<T> {
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/login";
+  }
   return (await res.json()) as T;
 }
 
