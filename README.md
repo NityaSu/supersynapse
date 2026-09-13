@@ -31,6 +31,31 @@ Open [http://localhost:3000](http://localhost:3000), create an account, save a m
 
 Anyone who signs up gets their own private spaces. Search and Ask use Gemini until the free daily quota is hit; keyword search still works without it.
 
+## Tests
+
+```bash
+bun test src        # unit tests, no network or database
+bun run test:all    # also runs the tenancy tests below
+```
+
+`bun test src` covers the pure logic: chunking, embedding parsing, keyword
+scoring, hybrid result merging, and the dream relation thresholds.
+
+Tenancy isolation is verified against a real Supabase project instead of a mock,
+because Row Level Security is the only thing separating two users' data. Create
+two users in Supabase Auth and add them to `.env.local`:
+
+```
+RLS_TEST_USER_A_EMAIL=
+RLS_TEST_USER_A_PASSWORD=
+RLS_TEST_USER_B_EMAIL=
+RLS_TEST_USER_B_PASSWORD=
+```
+
+Then `bun run test:rls`. The suite signs both users in with the **anon** key —
+the same key the browser uses, never the service role key, which would bypass
+RLS and make the tests meaningless. Without those variables the suite skips.
+
 ## API
 
 All routes require a signed-in session cookie.
