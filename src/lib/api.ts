@@ -4,7 +4,9 @@ import type { SearchMode } from "@/lib/types";
 
 async function readJson<T>(res: Response): Promise<T> {
   if (res.status === 401 && typeof window !== "undefined") {
-    window.location.href = "/login";
+    // A full document load, not a client transition: the session is gone, so we
+    // want cached client state discarded and the auth proxy to see the request.
+    window.location.href = new URL("/login", window.location.origin).toString();
   }
   return (await res.json()) as T;
 }

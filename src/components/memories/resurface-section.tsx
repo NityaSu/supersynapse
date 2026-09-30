@@ -22,11 +22,19 @@ export function ResurfaceSection() {
 
   const dismissTimer = useRef<number | null>(null);
 
-  useEffect(() => {
+  // Reset the deck when the underlying cards change, during render rather than
+  // in an effect so there is no frame showing the old position.
+  const deckKey = useMemo(
+    () => items.map((item) => item.memory.id).join(","),
+    [items]
+  );
+  const [seenDeckKey, setSeenDeckKey] = useState(deckKey);
+  if (seenDeckKey !== deckKey) {
+    setSeenDeckKey(deckKey);
     setIndex(0);
     setDx(0);
     setDragging(false);
-  }, [items]);
+  }
 
   useEffect(() => {
     return () => {
