@@ -5,7 +5,6 @@ import { ResurfaceSection } from "@/components/memories/resurface-section";
 import { SearchToolbar } from "@/components/memories/search-toolbar";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { Logo } from "@/components/ui/logo";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { cn } from "@/lib/cn";
 
@@ -28,7 +27,6 @@ export function MemoryFeed() {
     <main className="min-w-0 flex-1 lg:ml-[260px] xl:mr-[300px]">
       <div className="mx-auto max-w-[720px] px-4 py-4 pb-20 lg:px-5 lg:py-6">
         <div className="mb-14 flex flex-col items-center text-center">
-          <Logo size={72} className="mb-6" />
           <h1 className="font-display mb-2 text-[26px] font-bold tracking-[-1px] text-ink sm:text-[32px]">
             What is on your mind?
           </h1>
