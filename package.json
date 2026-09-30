@@ -6,7 +6,10 @@
     "dev": "bun --bun next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "bun test src",
+    "test:rls": "bun test test/rls.test.ts",
+    "test:all": "bun test"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
