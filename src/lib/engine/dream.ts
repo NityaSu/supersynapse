@@ -16,10 +16,29 @@ export type DreamResult = {
   extracted: number;
 };
 
-const UPDATE_THRESHOLD = 0.82;
-const EXTEND_THRESHOLD = 0.55;
+/**
+ * Cosine similarity at or above this means the new fact supersedes the old one.
+ * Provisional — see docs once the eval harness can measure false supersessions.
+ */
+export const UPDATE_THRESHOLD = 0.82;
 
-function fallbackFacts(content: string): string[] {
+/** At or above this (but below UPDATE_THRESHOLD) the new fact elaborates the old one. */
+export const EXTEND_THRESHOLD = 0.55;
+
+export type FactRelation = "updates" | "extends" | null;
+
+/**
+ * Decide how a new fact relates to the closest existing latest fact.
+ * `null` score means there was no candidate or no embedding to compare.
+ */
+export function classifyRelation(score: number | null): FactRelation {
+  if (score === null) return null;
+  if (score >= UPDATE_THRESHOLD) return "updates";
+  if (score >= EXTEND_THRESHOLD) return "extends";
+  return null;
+}
+
+export function fallbackFacts(content: string): string[] {
   return content
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
@@ -27,7 +46,7 @@ function fallbackFacts(content: string): string[] {
     .slice(0, 8);
 }
 
-function parseFactsJson(raw: string): string[] {
+export function parseFactsJson(raw: string): string[] {
   const trimmed = raw.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   const jsonText = fenced?.[1]?.trim() ?? trimmed;
@@ -85,23 +104,11 @@ export async function dreamDocument(
 
   for (const fact of facts) {
     const vector = await embed(fact);
-    let relation: "updates" | "extends" | null = null;
-    let related: GraphMemory | null = null;
-
-    if (vector) {
-      const closest = await findClosestLatestMemory(
-        document.containerTag,
-        vector,
-        exclude
-      );
-      if (closest && closest.score >= UPDATE_THRESHOLD) {
-        relation = "updates";
-        related = closest.memory;
-      } else if (closest && closest.score >= EXTEND_THRESHOLD) {
-        relation = "extends";
-        related = closest.memory;
-      }
-    }
+    const closest = vector
+      ? await findClosestLatestMemory(document.containerTag, vector, exclude)
+      : null;
+    const relation = classifyRelation(closest ? closest.score : null);
+    const related = relation ? closest!.memory : null;
 
     const memory = await insertGraphMemory({
       containerTag: document.containerTag,
