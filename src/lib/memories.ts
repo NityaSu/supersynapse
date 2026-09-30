@@ -1,5 +1,11 @@
 import { requireUser } from "@/lib/auth";
 import { embed } from "@/lib/embeddings";
+import {
+  SCORE_FLOOR,
+  keywordScore,
+  mergeByBestScore,
+  resolveMode,
+} from "@/lib/rank";
 import { ensureSpace, normalizeSpaceName } from "@/lib/spaces";
 import { escapeIlike, toVectorLiteral } from "@/lib/vector";
 
@@ -159,24 +165,9 @@ async function keywordSearch(
 
   if (error) throw error;
 
-  return (data ?? []).map((row) => {
-    const text = row.content.toLowerCase();
-    const score = text === q ? 1 : text.includes(q) ? 0.9 : 0.75;
-    return rowToMemory(row, score);
-  });
-}
-
-function mergeByBestScore(a: Memory[], b: Memory[]): Memory[] {
-  const byId = new Map<string, Memory>();
-
-  for (const memory of [...a, ...b]) {
-    const prev = byId.get(memory.id);
-    if (!prev || (memory.score ?? 0) > (prev.score ?? 0)) {
-      byId.set(memory.id, memory);
-    }
-  }
-
-  return [...byId.values()].sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
+  return (data ?? [])
+    .map((row) => rowToMemory(row, keywordScore(row.content, q)))
+    .filter((memory) => (memory.score ?? 0) > 0);
 }
 
 export async function backfillMissingEmbeddings(
@@ -234,32 +225,30 @@ export async function searchMemories(
   const semanticHits: Memory[] = error
     ? []
     : ((data ?? []) as Array<MemoryRow & { score: number }>)
-        .filter((row) => (row.score ?? 0) >= 0.25)
+        .filter((row) => (row.score ?? 0) >= SCORE_FLOOR)
         .map((row) => rowToMemory(row, row.score));
 
   if (error) {
     console.error("match_memories failed:", error.message);
   }
 
-  const merged = mergeByBestScore(keywordHits, semanticHits)
-    .filter((m) => (m.score ?? 0) >= 0.25)
+  const merged = mergeByBestScore(
+    [...keywordHits, ...semanticHits],
+    (m) => m.id,
+    (m) => m.score ?? 0
+  )
+    .filter((m) => (m.score ?? 0) >= SCORE_FLOOR)
     .slice(0, limit);
 
   if (merged.length === 0) {
     return { results: [], mode: "hybrid" };
   }
 
-  const keywordIds = new Set(keywordHits.map((m) => m.id));
-  const semanticIds = new Set(semanticHits.map((m) => m.id));
-  const usedKeyword = merged.some((m) => keywordIds.has(m.id));
-  const usedSemantic = merged.some((m) => semanticIds.has(m.id));
-
-  const mode =
-    usedKeyword && usedSemantic
-      ? "hybrid"
-      : usedSemantic
-        ? "semantic"
-        : "keyword";
+  const mode = resolveMode(
+    merged.map((m) => m.id),
+    new Set(keywordHits.map((m) => m.id)),
+    new Set(semanticHits.map((m) => m.id))
+  );
 
   return { results: merged, mode };
 }

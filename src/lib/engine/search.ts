@@ -1,5 +1,11 @@
 import { requireUser } from "@/lib/auth";
 import { embed } from "@/lib/embeddings";
+import {
+  SCORE_FLOOR,
+  keywordScore,
+  mergeByBestScore,
+  resolveMode,
+} from "@/lib/rank";
 import { normalizeSpaceName } from "@/lib/spaces";
 import { escapeIlike } from "@/lib/vector";
 
@@ -21,21 +27,13 @@ export type EngineSearchResult = {
   containerTag: string;
 };
 
-function keywordScore(content: string, q: string): number {
-  const text = content.toLowerCase();
-  if (text === q) return 1;
-  if (text.includes(q)) return 0.9;
-  return 0;
+/** Stable identity for a hit — chunks and graph memories have separate id spaces. */
+export function hitKey(hit: Pick<EngineSearchHit, "kind" | "id">): string {
+  return `${hit.kind}:${hit.id}`;
 }
 
 function mergeHits(hits: EngineSearchHit[]): EngineSearchHit[] {
-  const byKey = new Map<string, EngineSearchHit>();
-  for (const hit of hits) {
-    const key = `${hit.kind}:${hit.id}`;
-    const prev = byKey.get(key);
-    if (!prev || hit.score > prev.score) byKey.set(key, hit);
-  }
-  return [...byKey.values()].sort((a, b) => b.score - a.score);
+  return mergeByBestScore(hits, hitKey, (hit) => hit.score);
 }
 
 async function keywordHits(
@@ -124,7 +122,7 @@ async function semanticHits(
 
   return [
     ...((chunks ?? []) as ChunkHit[])
-      .filter((row) => row.score >= 0.25)
+      .filter((row) => row.score >= SCORE_FLOOR)
       .map((row) => ({
         id: row.id,
         kind: "chunk" as const,
@@ -134,7 +132,7 @@ async function semanticHits(
         score: row.score,
       })),
     ...((memories ?? []) as MemoryHit[])
-      .filter((row) => row.score >= 0.25)
+      .filter((row) => row.score >= SCORE_FLOOR)
       .map((row) => ({
         id: row.id,
         kind: "memory" as const,
@@ -176,20 +174,18 @@ export async function searchEngine(
 
   const sem = await semanticHits(containerTag, queryVector);
   const merged = mergeHits([...kw, ...sem])
-    .filter((h) => h.score >= 0.25)
+    .filter((h) => h.score >= SCORE_FLOOR)
     .slice(0, limit);
 
   if (merged.length === 0) {
     return { results: [], mode: "hybrid", containerTag };
   }
 
-  const kwKeys = new Set(kw.map((h) => `${h.kind}:${h.id}`));
-  const semKeys = new Set(sem.map((h) => `${h.kind}:${h.id}`));
-  const usedKw = merged.some((h) => kwKeys.has(`${h.kind}:${h.id}`));
-  const usedSem = merged.some((h) => semKeys.has(`${h.kind}:${h.id}`));
-
-  const mode =
-    usedKw && usedSem ? "hybrid" : usedSem ? "semantic" : "keyword";
+  const mode = resolveMode(
+    merged.map(hitKey),
+    new Set(kw.map(hitKey)),
+    new Set(sem.map(hitKey))
+  );
 
   return { results: merged, mode, containerTag };
 }
