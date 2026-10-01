@@ -12,14 +12,15 @@ import {
 } from "react";
 import {
   askMemories,
-  createMemory,
   createSpace,
   deleteMemory,
   deleteSpace,
   getAllMemories,
   getSpaces,
+  ingestThought,
   searchMemories,
   updateMemory,
+  type CaptureResult,
 } from "@/lib/api";
 import { labelize } from "@/lib/format";
 import type { Memory } from "@/lib/memories";
@@ -85,7 +86,7 @@ type WorkspaceValue = {
   toggleFavorite: (id: string) => void;
   showToast: (msg: string) => void;
   refresh: () => Promise<void>;
-  addMemory: (content: string, space: string) => Promise<void>;
+  addMemory: (content: string, space: string) => Promise<CaptureResult>;
   saveMemory: (id: string, content: string) => Promise<boolean>;
   removeMemory: (id: string) => Promise<void>;
   addSpace: (name: string) => Promise<string | null>;
@@ -233,10 +234,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         currentFilter !== "all" &&
         currentFilter !== "favorites" &&
         currentFilter !== "recent" &&
+        currentFilter !== "linked" &&
         m.containerTag !== currentFilter
       ) {
         return false;
       }
+      if (currentFilter === "linked" && !m.relation) return false;
       if (q && !semanticMode) return m.content.toLowerCase().includes(q);
       return true;
     });
@@ -281,11 +284,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const day = 24 * 60 * 60 * 1000;
     const today = memories.filter((m) => nowMs - Date.parse(m.createdAt) < day);
     if (today.length === 0) {
-      return "No new memories today. Capture a thought to start today's digest.";
+      return "No new facts today. Drop a thought to start today's digest.";
     }
     const tags = [...new Set(today.map((m) => m.containerTag))];
     const preview = today[0]?.content.slice(0, 90) ?? "";
-    return `You saved ${today.length} memor${today.length === 1 ? "y" : "ies"} today across ${tags.map(labelize).join(", ")}. ${preview}${today[0] && today[0].content.length > 90 ? "…" : ""}`;
+    return `You saved ${today.length} fact${today.length === 1 ? "" : "s"} today across ${tags.map(labelize).join(", ")}. ${preview}${today[0] && today[0].content.length > 90 ? "…" : ""}`;
   }, [memories, nowMs]);
 
   const retrieval = useMemo(() => {
@@ -295,13 +298,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [searchHits]);
 
   const viewTitle =
-    visibleSpace === "all"
-      ? "All Memories"
-      : `${spaceStyle(visibleSpace).label} Memories`;
+    currentFilter === "linked"
+      ? "What changed"
+      : visibleSpace === "all"
+        ? "Latest facts"
+        : `${spaceStyle(visibleSpace).label} facts`;
   const viewSubtitle =
-    visibleSpace === "all"
-      ? `${memories.length} memories across all spaces`
-      : `${counts[visibleSpace] ?? 0} memories in ${spaceStyle(visibleSpace).label}`;
+    currentFilter === "linked"
+      ? `${filtered.filter((m) => m.relation).length} facts that updated or extended an older one`
+      : visibleSpace === "all"
+        ? `${memories.length} current facts across all spaces`
+        : `${counts[visibleSpace] ?? 0} current facts in ${spaceStyle(visibleSpace).label}`;
 
   const closeOverlays = useCallback(() => {
     setCmdOpen(false);
@@ -387,25 +394,44 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     showToast,
     refresh,
     addMemory: async (content, space) => {
-      await createMemory(content, space);
-      setAddOpen(false);
+      const result = await ingestThought(content, space);
+      if (!result.ok) {
+        showToast(result.error);
+        return result;
+      }
       await refresh();
-      showToast("Memory saved");
+      return result;
     },
     saveMemory: async (id, content) => {
+      const existing = memories.find((memory) => memory.id === id);
+      if (existing?.source === "graph") {
+        const result = await ingestThought(content, existing.containerTag);
+        if (!result.ok) {
+          showToast(result.error);
+          return false;
+        }
+        await refresh();
+        showToast(
+          result.facts.some((fact) => fact.relation === "updates")
+            ? "This replaced an older fact"
+            : "New facts extracted"
+        );
+        setDetailId(null);
+        return true;
+      }
       const ok = await updateMemory(id, content);
       if (ok) {
         await refresh();
-        showToast("Memory updated");
+        showToast("Fact updated");
       }
       return ok;
     },
     removeMemory: async (id) => {
-      if (!confirm("Delete this memory?")) return;
+      if (!confirm("Delete this fact?")) return;
       if (await deleteMemory(id)) {
         setDetailId(null);
         await refresh();
-        showToast("Memory deleted");
+        showToast("Fact deleted");
       }
     },
     addSpace: async (name) => {
@@ -422,7 +448,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const count = current?.memoryCount ?? counts[visibleSpace] ?? 0;
       const message =
         count > 0
-          ? `Delete space "${visibleSpace}" and its ${count} memor${count === 1 ? "y" : "ies"}?`
+          ? `Delete space "${visibleSpace}" and its ${count} fact${count === 1 ? "" : "s"}?`
           : `Delete empty space "${visibleSpace}"?`;
       if (!confirm(message)) return;
       const result = await deleteSpace(visibleSpace, count > 0);
