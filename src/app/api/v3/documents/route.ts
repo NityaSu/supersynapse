@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleRoute } from "@/lib/auth";
-import { createDocument } from "@/lib/engine/documents";
+import { ingestThought } from "@/lib/engine/documents";
 
 /** Contract: POST /v3/documents */
 export async function POST(request: Request) {
@@ -23,14 +23,32 @@ export async function POST(request: Request) {
         ? (body.metadata as Record<string, string | number | boolean>)
         : undefined;
 
-    const document = await createDocument({
+    const { document, facts } = await ingestThought({
       content,
       containerTag,
       title,
       metadata,
     });
-    return NextResponse.json({ id: document.id, status: document.status }, {
-      status: 201,
-    });
+
+    if (document.status === "failed") {
+      return NextResponse.json(
+        {
+          error: document.error ?? "ingest failed",
+          id: document.id,
+          status: document.status,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        id: document.id,
+        status: document.status,
+        extracted: facts.length,
+        facts,
+      },
+      { status: 201 }
+    );
   });
 }

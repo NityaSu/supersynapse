@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { embed } from "@/lib/embeddings";
+import { attachRelations } from "@/lib/engine/relations";
 import type { GraphMemory, MemoryEdge, MemoryRelation } from "@/lib/engine/types";
 import { parseEmbedding, toVectorLiteral } from "@/lib/vector";
 
@@ -187,6 +188,70 @@ export async function insertEdge(input: {
     relation: input.relation,
     createdAt,
   };
+}
+
+export async function getGraphMemoriesByIds(
+  ids: string[]
+): Promise<GraphMemory[]> {
+  if (ids.length === 0) return [];
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("graph_memories")
+    .select(
+      "id, container_tag, document_id, content, is_latest, created_at, updated_at"
+    )
+    .in("id", ids);
+
+  if (error) throw error;
+  return (data ?? []).map((row) =>
+    rowToMemory({ ...row, embedding: null } as MemoryRow)
+  );
+}
+
+export async function deleteGraphMemory(id: string): Promise<boolean> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("graph_memories")
+    .delete()
+    .eq("id", id)
+    .select("id");
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
+export async function listFactMemories(
+  containerTag: string,
+  limit = 200
+): Promise<
+  Array<{
+    id: string;
+    content: string;
+    containerTag: string;
+    createdAt: string;
+    isLatest: boolean;
+    documentId: string | null;
+    relation: "updates" | "extends" | null;
+    replaces: { id: string; content: string } | null;
+    source: "graph";
+  }>
+> {
+  const memories = await listLatestGraphMemories(containerTag, limit);
+  const edges = await listEdgesForMemories(memories.map((memory) => memory.id));
+  const targets = await getGraphMemoriesByIds(
+    [...new Set(edges.map((edge) => edge.toMemoryId))]
+  );
+  return attachRelations(memories, edges, targets).map((fact) => ({
+    id: fact.id,
+    content: fact.content,
+    containerTag: fact.containerTag,
+    createdAt: fact.createdAt,
+    isLatest: fact.isLatest,
+    documentId: fact.documentId,
+    relation: fact.relation,
+    replaces: fact.replaces,
+    source: "graph" as const,
+  }));
 }
 
 /** Find the closest latest memory in the same container (by embedding cosine). */

@@ -43,13 +43,16 @@ export async function listSpaces(): Promise<Space[]> {
 
   if (error) throw error;
 
-  const { data: memoryRows, error: countError } = await supabase
-    .from("memories")
-    .select("container_tag");
-  if (countError) throw countError;
+  const [{ data: factRows, error: factError }, { data: noteRows, error: noteError }] =
+    await Promise.all([
+      supabase.from("graph_memories").select("container_tag").eq("is_latest", true),
+      supabase.from("memories").select("container_tag"),
+    ]);
+  if (factError) throw factError;
+  if (noteError) throw noteError;
 
   const counts = new Map<string, number>();
-  for (const row of memoryRows ?? []) {
+  for (const row of [...(factRows ?? []), ...(noteRows ?? [])]) {
     counts.set(row.container_tag, (counts.get(row.container_tag) ?? 0) + 1);
   }
 
@@ -137,14 +140,22 @@ export async function deleteSpace(
     return { error: "space not found", status: 404 };
   }
 
-  const { count, error: countError } = await supabase
-    .from("memories")
-    .select("id", { count: "exact", head: true })
-    .eq("container_tag", normalized);
+  const [{ count: noteCount, error: noteError }, { count: factCount, error: factError }] =
+    await Promise.all([
+      supabase
+        .from("memories")
+        .select("id", { count: "exact", head: true })
+        .eq("container_tag", normalized),
+      supabase
+        .from("graph_memories")
+        .select("id", { count: "exact", head: true })
+        .eq("container_tag", normalized),
+    ]);
 
-  if (countError) throw countError;
+  if (noteError) throw noteError;
+  if (factError) throw factError;
 
-  const memoryCount = count ?? 0;
+  const memoryCount = (noteCount ?? 0) + (factCount ?? 0);
   if (memoryCount > 0 && !options.force) {
     return {
       error: `space has ${memoryCount} memor${memoryCount === 1 ? "y" : "ies"}; pass force=true to delete them too`,

@@ -1,7 +1,9 @@
 import { requireUser } from "@/lib/auth";
 import { embed } from "@/lib/embeddings";
 import { ensureSpace, normalizeSpaceName } from "@/lib/spaces";
-import { dreamDocument } from "@/lib/engine/dream";
+import { dreamDocument, getDocumentDreamView } from "@/lib/engine/dream";
+import { getGraphMemoriesByIds } from "@/lib/engine/graph";
+import { attachRelations } from "@/lib/engine/relations";
 import type {
   DocumentStatus,
   EngineChunk,
@@ -233,4 +235,40 @@ export async function createDocument(input: {
   const doc = await getDocument(id);
   if (!doc) throw new Error("document missing after create");
   return doc;
+}
+
+export type IngestFact = {
+  id: string;
+  content: string;
+  isLatest: boolean;
+  createdAt: string;
+  relation: "updates" | "extends" | null;
+  replaces: { id: string; content: string } | null;
+};
+
+export async function ingestThought(input: {
+  content: string;
+  containerTag?: string;
+  title?: string;
+  metadata?: Record<string, string | number | boolean>;
+}): Promise<{ document: EngineDocument; facts: IngestFact[] }> {
+  const document = await createDocument(input);
+  if (document.status === "failed") {
+    return { document, facts: [] };
+  }
+
+  const { memories, edges } = await getDocumentDreamView(document.id);
+  const targets = await getGraphMemoriesByIds(
+    [...new Set(edges.map((edge) => edge.toMemoryId))]
+  );
+  const facts = attachRelations(memories, edges, targets).map((fact) => ({
+    id: fact.id,
+    content: fact.content,
+    isLatest: fact.isLatest,
+    createdAt: fact.createdAt,
+    relation: fact.relation,
+    replaces: fact.replaces,
+  }));
+
+  return { document, facts };
 }

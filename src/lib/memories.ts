@@ -15,6 +15,11 @@ export type Memory = {
   containerTag: string;
   createdAt: string;
   score?: number;
+  isLatest?: boolean;
+  documentId?: string | null;
+  relation?: "updates" | "extends" | null;
+  replaces?: { id: string; content: string } | null;
+  source?: "graph" | "notebook";
 };
 
 export type SearchResult = {
@@ -137,6 +142,9 @@ export async function updateMemory(
 }
 
 export async function deleteMemory(id: string): Promise<boolean> {
+  const { deleteGraphMemory } = await import("@/lib/engine/graph");
+  if (await deleteGraphMemory(id)) return true;
+
   const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("memories")

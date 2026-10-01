@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { handleRoute } from "@/lib/auth";
-import { addMemory, listMemories } from "@/lib/memories";
+import { ingestThought } from "@/lib/engine/documents";
+import { listMemories } from "@/lib/memories";
 
 export async function GET(request: Request) {
   return handleRoute(async () => {
@@ -25,7 +26,34 @@ export async function POST(request: Request) {
       );
     }
 
-    const memory = await addMemory(content, containerTag);
-    return NextResponse.json({ memory }, { status: 201 });
+    const { document, facts } = await ingestThought({ content, containerTag });
+    if (document.status === "failed") {
+      return NextResponse.json(
+        { error: document.error ?? "ingest failed", facts: [] },
+        { status: 500 }
+      );
+    }
+
+    const first = facts[0];
+    return NextResponse.json(
+      {
+        memory: first
+          ? {
+              id: first.id,
+              content: first.content,
+              containerTag,
+              createdAt: first.createdAt,
+            }
+          : {
+              id: document.id,
+              content: content.trim(),
+              containerTag,
+              createdAt: document.createdAt,
+            },
+        facts,
+        extracted: facts.length,
+      },
+      { status: 201 }
+    );
   });
 }
