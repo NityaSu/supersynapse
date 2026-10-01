@@ -245,8 +245,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
 
     if (semanticMode && q && searchHits) {
-      const allowed = new Set(list.map((m) => m.id));
-      list = searchHits.filter((m) => allowed.has(m.id));
+      const byId = new Map(list.map((memory) => [memory.id, memory]));
+      list = searchHits.flatMap((hit) => {
+        const existing = byId.get(hit.id);
+        if (!existing) return [];
+        return [{ ...existing, score: hit.score }];
+      });
     }
 
     if (!semanticMode) {

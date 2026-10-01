@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { embed } from "@/lib/embeddings";
+import { listLatestFactsForDocuments } from "@/lib/engine/graph";
 import {
   SCORE_FLOOR,
   keywordScore,
@@ -34,6 +35,49 @@ export function hitKey(hit: Pick<EngineSearchHit, "kind" | "id">): string {
 
 function mergeHits(hits: EngineSearchHit[]): EngineSearchHit[] {
   return mergeByBestScore(hits, hitKey, (hit) => hit.score);
+}
+
+/**
+ * Chunks are raw text. The product shows current facts, so a chunk hit
+ * becomes the latest facts from that document, inheriting the chunk score.
+ */
+export function promoteChunksToFacts(
+  hits: EngineSearchHit[],
+  facts: Array<{
+    id: string;
+    content: string;
+    containerTag: string;
+    documentId: string | null;
+  }>
+): EngineSearchHit[] {
+  const factsByDoc = new Map<string, typeof facts>();
+  for (const fact of facts) {
+    if (!fact.documentId) continue;
+    const list = factsByDoc.get(fact.documentId) ?? [];
+    list.push(fact);
+    factsByDoc.set(fact.documentId, list);
+  }
+
+  const promoted: EngineSearchHit[] = [];
+  for (const hit of hits) {
+    if (hit.kind === "memory") {
+      promoted.push(hit);
+      continue;
+    }
+    if (!hit.documentId) continue;
+    for (const fact of factsByDoc.get(hit.documentId) ?? []) {
+      promoted.push({
+        id: fact.id,
+        kind: "memory",
+        content: fact.content,
+        containerTag: fact.containerTag,
+        documentId: fact.documentId,
+        score: hit.score,
+        isLatest: true,
+      });
+    }
+  }
+  return promoted;
 }
 
 async function keywordHits(
@@ -163,19 +207,27 @@ export async function searchEngine(
 
   const kw = await keywordHits(containerTag, q);
   const queryVector = await embed(query.trim());
+  const sem = queryVector ? await semanticHits(containerTag, queryVector) : [];
+
+  const facts = await listLatestFactsForDocuments(
+    [...kw, ...sem]
+      .filter((hit) => hit.kind === "chunk" && hit.documentId)
+      .map((hit) => hit.documentId as string)
+  );
+  const kwFacts = promoteChunksToFacts(kw, facts);
+  const semFacts = promoteChunksToFacts(sem, facts);
+
+  const merged = mergeHits([...kwFacts, ...semFacts])
+    .filter((h) => h.score >= SCORE_FLOOR)
+    .slice(0, limit);
 
   if (!queryVector) {
     return {
-      results: mergeHits(kw).slice(0, limit),
+      results: merged,
       mode: "keyword",
       containerTag,
     };
   }
-
-  const sem = await semanticHits(containerTag, queryVector);
-  const merged = mergeHits([...kw, ...sem])
-    .filter((h) => h.score >= SCORE_FLOOR)
-    .slice(0, limit);
 
   if (merged.length === 0) {
     return { results: [], mode: "hybrid", containerTag };
@@ -183,8 +235,8 @@ export async function searchEngine(
 
   const mode = resolveMode(
     merged.map(hitKey),
-    new Set(kw.map(hitKey)),
-    new Set(sem.map(hitKey))
+    new Set(kwFacts.map(hitKey)),
+    new Set(semFacts.map(hitKey))
   );
 
   return { results: merged, mode, containerTag };

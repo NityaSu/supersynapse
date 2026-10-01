@@ -83,6 +83,27 @@ export async function listGraphMemoriesForDocument(
   return (data ?? []).map((row) => rowToMemory(row as MemoryRow));
 }
 
+export async function listLatestFactsForDocuments(
+  documentIds: string[]
+): Promise<GraphMemory[]> {
+  const ids = [...new Set(documentIds.filter(Boolean))];
+  if (ids.length === 0) return [];
+
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase
+    .from("graph_memories")
+    .select(
+      "id, container_tag, document_id, content, is_latest, created_at, updated_at"
+    )
+    .in("document_id", ids)
+    .eq("is_latest", true);
+
+  if (error) throw error;
+  return (data ?? []).map((row) =>
+    rowToMemory({ ...row, embedding: null } as MemoryRow)
+  );
+}
+
 export async function listEdgesForMemories(
   memoryIds: string[]
 ): Promise<MemoryEdge[]> {
