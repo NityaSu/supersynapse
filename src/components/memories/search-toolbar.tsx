@@ -40,7 +40,7 @@ export function SearchToolbar() {
             className="w-full rounded-[14px] border border-line bg-elevated py-3 pr-[120px] pl-[42px] text-sm text-ink shadow-soft outline-none placeholder:text-ink-subtle focus:border-brand focus:shadow-[0_0_0_3px_rgba(255,102,0,0.1),var(--ss-shadow-soft)]"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search your memories..."
+            placeholder="What's true now?"
           />
           <div className="absolute right-2 flex items-center gap-1.5">
             <button

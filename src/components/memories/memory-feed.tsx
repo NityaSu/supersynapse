@@ -12,6 +12,7 @@ export function MemoryFeed() {
   const {
     loading,
     filtered,
+    memories,
     favorites,
     semanticMode,
     searchQuery,
@@ -20,6 +21,7 @@ export function MemoryFeed() {
     viewTitle,
     viewSubtitle,
     setViewMode,
+    setAddOpen,
     openDetail,
   } = useWorkspace();
 
@@ -28,13 +30,11 @@ export function MemoryFeed() {
       <div className="mx-auto max-w-[720px] px-4 py-4 pb-20 lg:px-5 lg:py-6">
         <div className="mb-14 flex flex-col items-center text-center">
           <h1 className="font-display mb-2 text-[26px] font-bold tracking-[-1px] text-ink sm:text-[32px]">
-            What is on your mind?
+            What is true now?
           </h1>
           <p className="max-w-[34rem] text-[15px] leading-[1.6] text-ink-muted">
-            Drop a thought. Supersynapse will bring it back when it matters most
-            —{" "}
-            <br />
-            so you stress less, forget less.
+            Drop a thought. Supersynapse extracts facts and keeps the latest one
+            when you change your mind.
           </p>
         </div>
         <SearchToolbar />
@@ -82,15 +82,40 @@ export function MemoryFeed() {
         </div>
 
         {loading ? (
-          <p className="text-sm text-ink-muted">Loading memories…</p>
+          <p className="text-sm text-ink-muted">Loading facts…</p>
+        ) : memories.length === 0 && !searchQuery.trim() ? (
+          <div className="animate-fade rounded-[14px] border border-line bg-elevated px-5 py-8 text-left sm:px-8">
+            <h3 className="mb-4 text-lg font-bold">How this works</h3>
+            <ol className="mb-6 list-decimal space-y-3 pl-5 text-sm leading-6 text-ink-secondary">
+              <li>
+                Drop a thought:{" "}
+                <span className="text-ink">“We use Postgres.”</span>
+              </li>
+              <li>
+                Later, drop the update:{" "}
+                <span className="text-ink">“We moved to Mongo.”</span>
+              </li>
+              <li>
+                Ask “What database do we use?” — you get Mongo, and Postgres is
+                marked old.
+              </li>
+            </ol>
+            <Button
+              className="w-auto px-5 py-2"
+              onClick={() => setAddOpen(true)}
+            >
+              <Icon name="plus" size={16} />
+              Drop a thought
+            </Button>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="animate-fade px-5 py-[60px] text-center">
             <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl bg-brand-light text-brand">
               <Icon name="empty" size={32} />
             </div>
-            <h3 className="mb-1.5 text-lg font-bold">No memories found</h3>
+            <h3 className="mb-1.5 text-lg font-bold">No matching facts</h3>
             <p className="text-sm text-ink-muted">
-              Try a different search or add your first memory.
+              Try a different search, or drop another thought.
             </p>
           </div>
         ) : (

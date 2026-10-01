@@ -13,12 +13,14 @@ export function Sidebar() {
   const {
     spaces,
     visibleSpace,
+    currentFilter,
     counts,
     sidebarOpen,
     setSidebarOpen,
     setAddOpen,
     setRightPanelOpen,
     setSpace,
+    setCurrentFilter,
     addSpace,
     removeSpace,
     showToast,
@@ -54,7 +56,7 @@ export function Sidebar() {
         <div className="border-b border-line p-4">
           <Button onClick={() => setAddOpen(true)}>
             <Icon name="plus" size={16} />
-            New Memory
+            Drop a thought
           </Button>
         </div>
         <nav className="flex-1 overflow-y-auto px-3 py-2">
@@ -63,11 +65,18 @@ export function Sidebar() {
           </p>
           <Button
             variant="nav"
-            className={visibleSpace === "all" ? "bg-canvas font-semibold text-ink" : ""}
-            onClick={() => setSpace("all")}
+            className={
+              visibleSpace === "all" && currentFilter !== "linked"
+                ? "bg-canvas font-semibold text-ink"
+                : ""
+            }
+            onClick={() => {
+              setCurrentFilter("all");
+              setSpace("all");
+            }}
           >
             <Icon name="grid" />
-            All Memories
+            Latest facts
             <span className="ml-auto text-xs text-ink-subtle tabular-nums">
               {counts.all ?? 0}
             </span>
@@ -81,7 +90,10 @@ export function Sidebar() {
                 className={
                   visibleSpace === space.name ? "bg-canvas font-semibold text-ink" : ""
                 }
-                onClick={() => setSpace(space.name)}
+                onClick={() => {
+                  setCurrentFilter("all");
+                  setSpace(space.name);
+                }}
               >
                 <span
                   className="size-2 shrink-0 rounded-full"
@@ -124,7 +136,7 @@ export function Sidebar() {
             variant="nav"
             onClick={() => {
               setRightPanelOpen(true);
-              showToast("Related memories are in Insights");
+              showToast("Related facts are in Insights");
             }}
           >
             <Icon name="link" />
@@ -142,10 +154,17 @@ export function Sidebar() {
           </Button>
           <Button
             variant="nav"
-            onClick={() => showToast("Memory Graph visualization coming later")}
+            className={currentFilter === "linked" ? "bg-canvas font-semibold text-ink" : ""}
+            onClick={() => {
+              setCurrentFilter("linked");
+              setSpace("all");
+              if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                setSidebarOpen(false);
+              }
+            }}
           >
             <Icon name="graph" />
-            Memory Graph
+            What changed
           </Button>
         </nav>
         <div className="mt-auto border-t border-line p-4">

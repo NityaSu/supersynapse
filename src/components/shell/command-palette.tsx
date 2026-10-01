@@ -26,11 +26,11 @@ export function CommandPalette() {
   const q = query.toLowerCase();
   const items = useMemo(() => {
     const list = [
-      { id: "new", label: "New Memory", hint: "Command", run: () => setAddOpen(true) },
+      { id: "new", label: "Drop a thought", hint: "Command", run: () => setAddOpen(true) },
       { id: "theme", label: "Toggle Theme", hint: "Command", run: toggleTheme },
       {
         id: "ask",
-        label: "Ask your memories",
+        label: "Ask current facts",
         hint: "Command",
         run: () => setRightPanelOpen(true),
       },
@@ -119,7 +119,7 @@ export function CommandPalette() {
               setQuery(e.target.value);
               setIndex(0);
             }}
-            placeholder="Search memories, spaces, or commands..."
+            placeholder="Search facts, spaces, or commands..."
           />
           <Kbd className="text-[11px]">ESC</Kbd>
         </div>

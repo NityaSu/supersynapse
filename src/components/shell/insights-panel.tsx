@@ -53,7 +53,7 @@ export function InsightsPanel() {
   }
 
   const stats = [
-    [memories.length, "Memories", false],
+    [memories.length, "Facts", false],
     [related.length, "Connections", false],
     [spaces.length, "Spaces", false],
     [retrieval, "Retrieval", true],
@@ -81,7 +81,7 @@ export function InsightsPanel() {
         <section className="border-b border-line p-5">
           <PanelHeader icon="link" title="Related to Recent" />
           {related.length === 0 ? (
-            <p className="text-sm text-ink-muted">Related memories will appear here.</p>
+            <p className="text-sm text-ink-muted">Related facts will appear here.</p>
           ) : (
             related.map((memory) => (
               <RelatedMemory key={memory.id} memory={memory} onOpen={openDetail} />
@@ -116,7 +116,7 @@ export function InsightsPanel() {
               className="w-full rounded-[10px] border border-line bg-canvas px-3 py-2.5 text-[13px] text-ink outline-none focus:border-brand focus:shadow-[0_0_0_3px_rgba(255,102,0,0.1)]"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Ask a question..."
+              placeholder="What's true now?"
             />
             <Button type="submit" disabled={asking || !question.trim()}>
               {asking ? "Thinking…" : "Ask"}

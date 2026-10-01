@@ -53,7 +53,7 @@ function ShellLayout() {
       <Button
         className="fixed right-6 bottom-6 z-50 size-14 rounded-full p-0 shadow-[0_4px_16px_rgba(255,102,0,0.35)] hover:scale-105 lg:hidden"
         onClick={() => setAddOpen(true)}
-        aria-label="New memory"
+        aria-label="Drop a thought"
       >
         <Icon name="plus" size={24} />
       </Button>

@@ -101,10 +101,20 @@ function DetailBody({ detail }: { detail: Memory }) {
             {detail.content}
           </p>
         )}
+        {detail.relation === "updates" && detail.replaces ? (
+          <p className="mb-4 text-sm leading-6 text-brand">
+            This replaced “{detail.replaces.content}”
+          </p>
+        ) : null}
+        {detail.relation === "extends" && detail.replaces ? (
+          <p className="mb-4 text-sm leading-6 text-ink-muted">
+            This extends “{detail.replaces.content}”
+          </p>
+        ) : null}
         {related.length > 0 && (
           <div>
             <h4 className="mb-2.5 text-xs font-bold tracking-wide text-ink-muted uppercase">
-              Related Memories
+              Related facts
             </h4>
             {related.map((memory) => (
               <RelatedMemory key={memory.id} memory={memory} onOpen={openDetail} />

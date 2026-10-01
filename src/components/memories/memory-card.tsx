@@ -3,6 +3,7 @@
 import { SpaceBadge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
 import type { Memory } from "@/lib/memories";
+import { snippet } from "@/lib/resurface";
 import { spaceStyle } from "@/lib/space-style";
 
 export function MemoryCard({
@@ -26,6 +27,16 @@ export function MemoryCard({
       <p className="mb-3 line-clamp-3 text-sm leading-6 text-ink-secondary">
         {memory.content}
       </p>
+      {memory.relation === "updates" && memory.replaces ? (
+        <p className="mb-3 text-[12px] leading-5 text-brand">
+          Replaces “{snippet(memory.replaces.content, 72)}”
+        </p>
+      ) : null}
+      {memory.relation === "extends" && memory.replaces ? (
+        <p className="mb-3 text-[12px] leading-5 text-ink-muted">
+          Extends “{snippet(memory.replaces.content, 72)}”
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SpaceBadge
           label={style.label}
